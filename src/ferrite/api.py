@@ -294,4 +294,54 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
 
         return result
 
+    @app.post("/tempr")
+    async def tempr_search_endpoint(request: Request):
+        """TEMPR multi-strategy retrieval."""
+        from .embeddings import OllamaEmbedder
+        from .tempr import tempr_search
+
+        body = await request.json()
+        query = body.get("query", "")
+        limit = body.get("limit", 10)
+        include_history = body.get("include_history", False)
+
+        if pipeline is None:
+            return {"error": "Pipeline not available"}
+
+        try:
+            embedder = OllamaEmbedder()
+        except Exception:
+            embedder = None
+
+        results = tempr_search(
+            pipeline.driver, query, embedder=embedder,
+            limit=limit, include_history=include_history,
+        )
+        return {"results": results, "count": len(results)}
+
+    @app.get("/mental-models")
+    async def search_mental_models_endpoint(query: str, limit: int = 5):
+        """Search mental models."""
+        from .mental_models import search_mental_models
+
+        if pipeline is None:
+            return {"error": "Pipeline not available"}
+        results = search_mental_models(
+            pipeline.driver, query, limit=limit
+        )
+        return {"results": results, "count": len(results)}
+
+    @app.post("/consolidate")
+    async def consolidate_endpoint():
+        """Run observation consolidation on pending groups."""
+        from .consolidator import consolidate_pending
+
+        if pipeline is None:
+            return {"error": "Pipeline not available"}
+        count = consolidate_pending(
+            pipeline.driver, pipeline.llm_client,
+            redis_client=pipeline.redis_client,
+        )
+        return {"consolidated_groups": count}
+
     return app

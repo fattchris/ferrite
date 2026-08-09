@@ -46,6 +46,7 @@ from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
+from .embeddings import OllamaEmbedder
 from .query import (
     get_entity_facts,
     inject_context,
@@ -69,6 +70,7 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "glm-5.2")
 # --- Neo4j driver (lazy init) ---
 
 _driver = None
+_embedder = None
 
 
 def _get_driver():
@@ -80,6 +82,14 @@ def _get_driver():
             NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD)
         )
     return _driver
+
+
+def _get_embedder():
+    """Lazy init Ollama embedder for semantic search."""
+    global _embedder
+    if _embedder is None:
+        _embedder = OllamaEmbedder()
+    return _embedder
 
 
 def _llm_client(system_prompt: str, user_prompt: str) -> str:
@@ -238,6 +248,76 @@ TOOLS = [
             "required": ["content"],
         },
     ),
+    types.Tool(
+        name="ferrite_tempr_search",
+        description=(
+            "TEMPR multi-strategy retrieval: semantic, BM25, "
+            "graph, temporal, and recency strategies fused "
+            "with Reciprocal Rank Fusion (RRF)."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results (default 10)",
+                    "default": 10,
+                },
+                "include_history": {
+                    "type": "boolean",
+                    "description": "Include superseded facts",
+                    "default": False,
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    types.Tool(
+        name="ferrite_mental_model",
+        description=(
+            "Create or search mental models — user-curated "
+            "summaries for common query patterns."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["search", "create", "draft"],
+                    "description": "search/find, create/manual, draft/LLM-generate",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Search query or entity name",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Title (for create/draft)",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": "Summary text (for create)",
+                },
+            },
+            "required": ["action", "query"],
+        },
+    ),
+    types.Tool(
+        name="ferrite_consolidate",
+        description=(
+            "Run observation consolidation on pending groups. "
+            "Synthesizes raw facts into higher-level beliefs "
+            "with evidence tracking."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {},
+        },
+    ),
 ]
 
 
@@ -255,7 +335,13 @@ def _json_response(data: Any) -> list[types.TextContent]:
 def _handle_search(args: dict) -> list[types.TextContent]:
     query = args["query"]
     limit = args.get("limit", 10)
-    results = search_facts(_get_driver(), query, limit=limit)
+    try:
+        embedder = _get_embedder()
+    except Exception:
+        embedder = None
+    results = search_facts(
+        _get_driver(), query, limit=limit, embedder=embedder
+    )
     return _json_response({"results": results, "count": len(results)})
 
 
@@ -280,7 +366,13 @@ def _handle_multi_hop(args: dict) -> list[types.TextContent]:
 
 def _handle_inject(args: dict) -> list[types.TextContent]:
     text = args["text"]
-    results = inject_context(_get_driver(), text, _llm_client)
+    try:
+        embedder = _get_embedder()
+    except Exception:
+        embedder = None
+    results = inject_context(
+        _get_driver(), text, _llm_client, embedder=embedder
+    )
     return _json_response({"results": results, "count": len(results)})
 
 
@@ -294,6 +386,75 @@ def _handle_ingest(args: dict) -> list[types.TextContent]:
     return _json_response(_ingest(content, source))
 
 
+def _handle_tempr_search(args: dict) -> list[types.TextContent]:
+    """TEMPR multi-strategy retrieval."""
+    from .tempr import tempr_search
+
+    query = args["query"]
+    limit = args.get("limit", 10)
+    include_history = args.get("include_history", False)
+    try:
+        embedder = _get_embedder()
+    except Exception:
+        embedder = None
+    results = tempr_search(
+        _get_driver(), query, embedder=embedder,
+        limit=limit, include_history=include_history,
+    )
+    return _json_response({"results": results, "count": len(results)})
+
+
+def _handle_mental_model(args: dict) -> list[types.TextContent]:
+    """Mental model create/search/draft."""
+    from .mental_models import (
+        create_mental_model,
+        draft_mental_model,
+        search_mental_models,
+    )
+
+    action = args["action"]
+    query = args["query"]
+
+    if action == "search":
+        results = search_mental_models(_get_driver(), query)
+        return _json_response(
+            {"results": results, "count": len(results)}
+        )
+    elif action == "create":
+        title = args.get("title", query)
+        summary = args.get("summary", "")
+        model_id = create_mental_model(
+            _get_driver(), title=title, summary=summary,
+            curated_for=[query],
+        )
+        return _json_response({"model_id": model_id, "status": "created"})
+    elif action == "draft":
+        model_id = draft_mental_model(
+            _get_driver(), query, _llm_client,
+        )
+        if model_id:
+            return _json_response(
+                {"model_id": model_id, "status": "drafted_needs_approval"}
+            )
+        return _json_response({"status": "no_facts_found"})
+    else:
+        return _json_response({"error": f"Unknown action: {action}"})
+
+
+def _handle_consolidate(args: dict) -> list[types.TextContent]:
+    """Run observation consolidation on pending groups."""
+    from .consolidator import consolidate_pending
+
+    try:
+        import redis as _redis
+        r = _redis.from_url(REDIS_URL)
+    except Exception:
+        r = None
+
+    count = consolidate_pending(_get_driver(), _llm_client, redis_client=r)
+    return _json_response({"consolidated_groups": count})
+
+
 TOOL_HANDLERS = {
     "ferrite_search": _handle_search,
     "ferrite_query": _handle_query,
@@ -302,6 +463,9 @@ TOOL_HANDLERS = {
     "ferrite_inject": _handle_inject,
     "ferrite_stats": _handle_stats,
     "ferrite_ingest": _handle_ingest,
+    "ferrite_tempr_search": _handle_tempr_search,
+    "ferrite_mental_model": _handle_mental_model,
+    "ferrite_consolidate": _handle_consolidate,
 }
 
 

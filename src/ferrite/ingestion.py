@@ -117,6 +117,18 @@ class IngestionPipeline:
         for fact_data in extraction.get("facts", []):
             self._write_fact_with_temporal(episode, fact_data, entity_cache)
 
+        # Step 4: Enqueue consolidation groups for newly written facts (A16)
+        try:
+            from .consolidator import _group_key, enqueue_consolidation
+            for fact_data in extraction.get("facts", []):
+                subj_name = fact_data["subject"]
+                predicate = fact_data.get("predicate", "other")
+                namespace = episode.namespace or "shared"
+                gk = _group_key(subj_name, predicate, namespace)
+                enqueue_consolidation(self.redis_client, gk)
+        except Exception as e:
+            logger.debug("Consolidation enqueue failed: %s", e)
+
         logger.info(f"Completed processing episode {episode.id}")
 
     def _write_fact_with_temporal(
