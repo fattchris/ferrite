@@ -1,8 +1,6 @@
 # sssf.config.yaml — Ferrite build roster
-# GLM-5.2 as architect/orchestrator/reviewer (local via LiteLLM)
-# DS-V4-Flash as builder/scout (local via LiteLLM)
-# LLM-mode agents (litellm backend) for text-only roles
-# omp (pi) for builder which needs file access
+# All agents use litellm backend (direct LLM API, no file access)
+# Files are written by the ADW script from the builder's JSON output
 
 defaults:
   coding_agent: litellm
@@ -13,7 +11,7 @@ defaults:
   harness_engineering: []
 
 agents:
-  # Architect — GLM-5.2 via LiteLLM direct API. Heavy reasoning, plans the architecture.
+  # Architect — GLM-5.2. Heavy reasoning, plans the architecture.
   - name: planner
     coding_agent: litellm
     model: litellm/glm-5.2
@@ -37,19 +35,19 @@ agents:
       system: adws/adw_data/prompt_engineering/reviewer/system.md
       user: adws/adw_data/prompt_engineering/reviewer/user.md
 
-  # Implementer — GLM-5.2 via omp for file access. (DS-V4-Flash has streaming issues in omp)
+  # Implementer — GLM-5.2. Outputs file contents as JSON in notes_for_next_agent.
   - name: builder
-    coding_agent: pi
+    coding_agent: litellm
     model: litellm/glm-5.2
     thinking: medium
     color: "#4ade80"
-    purpose: "Implement the Ferrite MVP from the spec: edit files, run tests, fix failures."
-    tools: ["read", "bash", "edit", "write", "grep", "find", "ls"]
+    purpose: "Implement the Ferrite MVP from the spec: output file contents as JSON."
+    tools: []
     prompt_engineering:
       system: adws/adw_data/prompt_engineering/builder/system.md
       user: adws/adw_data/prompt_engineering/builder/user.md
 
-  # Scout — GLM-5.2 via LiteLLM direct API. Light recon.
+  # Scout — GLM-5.2. Light recon.
   - name: scout
     coding_agent: litellm
     model: litellm/glm-5.2
