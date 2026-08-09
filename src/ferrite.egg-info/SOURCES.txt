@@ -1,0 +1,8 @@
+pyproject.toml
+src/ferrite/__init__.py
+src/ferrite.egg-info/PKG-INFO
+src/ferrite.egg-info/SOURCES.txt
+src/ferrite.egg-info/dependency_links.txt
+src/ferrite.egg-info/requires.txt
+src/ferrite.egg-info/top_level.txt
+tests/test_placeholder.py
