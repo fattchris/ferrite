@@ -344,4 +344,37 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         )
         return {"consolidated_groups": count}
 
+    @app.get("/eval")
+    async def eval_endpoint():
+        """Run eval harness (§13.2, A5)."""
+        from .embeddings import OllamaEmbedder
+        from .eval import health_check, run_eval
+
+        health = health_check()
+        if health["status"] != "ok":
+            return {"error": "eval harness not ready", "health": health}
+
+        if pipeline is None:
+            return {"error": "Pipeline not available"}
+
+        try:
+            embedder = OllamaEmbedder()
+        except Exception:
+            embedder = None
+
+        return run_eval(pipeline.driver, embedder=embedder)
+
+    @app.get("/circuit-breaker")
+    async def circuit_breaker_endpoint():
+        """Get circuit breaker state (§8.1)."""
+        from .circuit_breaker import get_circuit_breaker
+        return get_circuit_breaker().get_state()
+
+    @app.post("/circuit-breaker/reset")
+    async def reset_circuit_breaker_endpoint():
+        """Manually reset the circuit breaker."""
+        from .circuit_breaker import get_circuit_breaker
+        get_circuit_breaker().reset()
+        return {"status": "reset", "state": "closed"}
+
     return app

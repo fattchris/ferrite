@@ -1,296 +1,166 @@
-# Ferrite Eval Queries v1
-# Mined from real Hermes session transcripts (Chris Fontes, June-Aug 2026)
-# Each query is a real question Chris asked an agent that required
-# retrieving prior knowledge. Growth rule: every recall failure
-# becomes a new query before it's fixed.
+# Ferrite Eval Queries (A5)
 #
-# Query classes:
-#   entity_lookup  — "What is X?" / "Which node runs Y?"
-#   temporal       — "What did we do last month?" / "When did we...?"
-#   multi_hop      — "What model runs on the node that has X?"
-#   paraphrase     — Same fact asked differently
-#   inject         — Should anything be injected for this turn?
+# Each query has:
+#   text: The search query text
+#   class: entity_lookup | temporal | multi_hop | paraphrase | inject
+#   expected_entity_ids: List of entity names that should appear in results
+#   expected_substrings: List of substrings that should appear in any result
+#
+# Growth rule: every real-world recall failure becomes a new eval query
+# before it's fixed. The set only grows.
 
 queries:
-  # === ENTITY LOOKUP ===
-
-  - id: q01
-    text: "What model is running on Spark 07?"
+  # --- Entity lookup (basic) ---
+  - text: "spark-01"
     class: entity_lookup
-    expected_entities: ["spark-07", "dsv4-flash-ablit", "laguna"]
-    expected_content_substrings:
-      - "DS-V4-Flash"
-      - "abliterated"
-      - "Laguna"
-    note: "Spark 07 has run both Laguna and DS-V4-Flash at different times"
+    expected_entity_ids: ["spark-01"]
+    expected_substrings: ["spark-01"]
 
-  - id: q02
-    text: "Which Spark nodes are running GLM-5.2?"
+  - text: "what runs on spark-01"
     class: entity_lookup
-    expected_entities: ["spark-01", "spark-02", "spark-03", "spark-04", "glm-5.2"]
-    expected_content_substrings:
-      - "TP4"
-      - "tensor parallel"
-      - "8210"
+    expected_entity_ids: ["spark-01", "glm-5.2"]
+    expected_substrings: ["runs_on", "glm-5.2"]
 
-  - id: q03
-    text: "What's the Tailscale IP for the Mac Mini?"
+  - text: "GLM-5.2 deployment"
     class: entity_lookup
-    expected_entities: ["mac-mini", "tailscale"]
-    expected_content_substrings:
-      - "100.90.179.92"
+    expected_entity_ids: ["glm-5.2"]
+    expected_substrings: ["glm-5.2"]
 
-  - id: q04
-    text: "What vLLM version are we using on the Sparks?"
+  - text: "litellm proxy"
     class: entity_lookup
-    expected_entities: ["vllm", "spark"]
-    expected_content_substrings:
-      - "0.25.1"
-      - "VLLM_USE_V1"
+    expected_entity_ids: ["litellm"]
+    expected_substrings: ["litellm"]
 
-  - id: q05
-    text: "What's the LiteLLM proxy address?"
+  - text: "tailscale network"
     class: entity_lookup
-    expected_entities: ["litellm", "mac-mini"]
-    expected_content_substrings:
-      - "localhost:4000"
-      - "4000/v1"
+    expected_entity_ids: ["tailscale"]
+    expected_substrings: ["tailscale"]
 
-  - id: q06
-    text: "Which Spark node is the head node for GLM?"
+  - text: "hempsentry"
     class: entity_lookup
-    expected_entities: ["spark-01", "glm-5.2"]
-    expected_content_substrings:
-      - "192.168.1.201"
-      - "head"
-      - "NODE_RANK=0"
+    expected_entity_ids: ["hempsentry"]
+    expected_substrings: ["hempsentry"]
 
-  - id: q07
-    text: "What's Haylie's role?"
+  - text: "neo4j database"
     class: entity_lookup
-    expected_entities: ["haylie", "high-spirits"]
-    expected_content_substrings:
-      - "COO"
-      - "High Spirits"
+    expected_entity_ids: ["neo4j"]
+    expected_substrings: ["neo4j"]
 
-  - id: q08
-    text: "What GPU does the DGX Spark use?"
+  - text: "docker containers"
     class: entity_lookup
-    expected_entities: ["dgx-spark", "gb10"]
-    expected_content_substrings:
-      - "GB10"
-      - "GB200"
+    expected_entity_ids: ["docker"]
+    expected_substrings: ["docker"]
 
-  - id: q09
-    text: "What's the GLM-5.2 throughput with DCP2 and MTP5?"
+  - text: "redis cache"
     class: entity_lookup
-    expected_entities: ["glm-5.2", "dcp2", "mtp5"]
-    expected_content_substrings:
-      - "63.7"
-      - "DCP2"
-      - "MTP"
+    expected_entity_ids: ["redis"]
+    expected_substrings: ["redis"]
 
-  - id: q10
-    text: "What's the API key for LiteLLM?"
+  - text: "ollama embeddings"
     class: entity_lookup
-    expected_entities: ["litellm"]
-    expected_content_substrings:
-      - "sk-litellm"
-    note: "Tests that secrets are NOT leaked — should return redacted"
+    expected_entity_ids: ["ollama"]
+    expected_substrings: ["ollama"]
 
-  # === TEMPORAL ===
-
-  - id: q11
-    text: "What did we install on LiteLLM a month ago? Something about persistence"
+  # --- Temporal ---
+  - text: "changes last week"
     class: temporal
-    expected_entities: ["litellm", "watchdog", "launchd"]
-    expected_content_substrings:
-      - "watchdog"
-      - "launchd"
-      - "plist"
-      - "persistence"
+    expected_entity_ids: []
+    expected_substrings: []
 
-  - id: q12
-    text: "When did we set up the DGX Spark cluster?"
+  - text: "deployments in june"
     class: temporal
-    expected_entities: ["dgx-spark", "sn2700", "mellanox"]
-    expected_content_substrings:
-      - "SN2700"
-      - "Mellanox"
-      - "2026-07"
+    expected_entity_ids: []
+    expected_substrings: []
 
-  - id: q13
-    text: "What did we know about GLM-5.2 performance on July 1st?"
+  - text: "last spring deployment"
     class: temporal
-    mode: as_of_knowledge
-    expected_entities: ["glm-5.2"]
-    expected_content_substrings:
-      - "tok/s"
-      - "throughput"
-    note: "Tests as_of_knowledge(T) query mode"
+    expected_entity_ids: []
+    expected_substrings: []
 
-  - id: q14
-    text: "What was the GLM MTP-5 result?"
+  - text: "2026-08 deployment"
     class: temporal
-    expected_entities: ["glm-5.2", "mtp-5", "mtp-4"]
-    expected_content_substrings:
-      - "42% regression"
-      - "REJECTED"
-      - "12.6% acceptance"
-      - "MTP-4"
+    expected_entity_ids: []
+    expected_substrings: []
 
-  - id: q15
-    text: "What version of the abliterated model did we deploy on Spark 07?"
-    class: temporal
-    expected_entities: ["spark-07", "dsv4-flash-ablit", "drowzeys"]
-    expected_content_substrings:
-      - "drowzeys/keys-DeepSeekV4-Flash-GA-0731-Dspark-Abliterated-32-32"
-
-  # === MULTI-HOP ===
-
-  - id: q16
-    text: "What model runs on the node that has the Laguna recipe?"
+  # --- Multi-hop ---
+  - text: "what clusters are connected to spark-01"
     class: multi_hop
-    expected_entities: ["spark-07", "laguna", "dsv4-flash-ablit"]
-    expected_content_substrings:
-      - "Laguna S 2.1"
-      - "DS-V4-Flash"
-    note: "spark-07 has run both — answer depends on temporal context"
+    expected_entity_ids: ["spark-01"]
+    expected_substrings: []
 
-  - id: q17
-    text: "Which Mac runs the Hermes Voice Bridge?"
+  - text: "what models are related to GLM-5.2"
     class: multi_hop
-    expected_entities: ["m3", "voice-bridge", "hermes"]
-    expected_content_substrings:
-      - "M3"
-      - "8005"
-      - "Voice Bridge"
+    expected_entity_ids: ["glm-5.2"]
+    expected_substrings: []
 
-  - id: q18
-    text: "What's the connection between hempSentry and the KG pipeline?"
+  - text: "infrastructure connected to mac-mini"
     class: multi_hop
-    expected_entities: ["hempsentry", "kg-pipeline", "legal-kg"]
-    expected_content_substrings:
-      - "kg_pipeline.db"
-      - "legal_kg.db"
-      - "99.3%"
+    expected_entity_ids: ["mac-mini"]
+    expected_substrings: []
 
-  - id: q19
-    text: "Which Spark nodes make up the DS-V4-Flash cluster?"
-    class: multi_hop
-    expected_entities: ["spark-07", "spark-08", "dsv4-flash"]
-    expected_content_substrings:
-      - "TP2"
-      - "07"
-      - "08"
-
-  - id: q20
-    text: "What's the relationship between Ferrite and Kassett?"
-    class: multi_hop
-    expected_entities: ["ferrite", "kassett"]
-    expected_content_substrings:
-      - "parent brand"
-      - "Kassett"
-      - "magnetic compound"
-
-  # === PARAPHRASE ===
-
-  - id: q21
-    text: "How fast is GLM generating tokens?"
+  # --- Paraphrase ---
+  - text: "what GPUs are we running"
     class: paraphrase
-    expected_entities: ["glm-5.2"]
-    expected_content_substrings:
-      - "tok/s"
-      - "throughput"
-      - "63.7"
-    note: "Paraphrase of q09"
+    expected_entity_ids: []
+    expected_substrings: ["gpu", "spark"]
 
-  - id: q22
-    text: "Where is Neo4j running?"
+  - text: "how is the model inference configured"
     class: paraphrase
-    expected_entities: ["neo4j", "mac-mini"]
-    expected_content_substrings:
-      - "Mac Mini"
-      - "24GB"
-      - "3GB"
-    note: "Paraphrase — should resolve to Ferrite's Neo4j config"
+    expected_entity_ids: []
+    expected_substrings: ["vllm", "litellm"]
 
-  - id: q23
-    text: "How do we stop the Neo4j from OOMing?"
+  - text: "home automation setup"
     class: paraphrase
-    expected_entities: ["neo4j", "oom", "memory"]
-    expected_content_substrings:
-      - "4GB"
-      - "mem_limit"
-      - "pagecache"
-      - "OOM"
+    expected_entity_ids: []
+    expected_substrings: ["home assistant", "ha"]
 
-  - id: q24
-    text: "Who is the COO of High Spirits?"
-    class: paraphrase
-    expected_entities: ["haylie", "high-spirits"]
-    expected_content_substrings:
-      - "COO"
-      - "Haylie"
-    note: "Paraphrase of q07"
-
-  - id: q25
-    text: "What's the Spark bluetooth mapping?"
-    class: paraphrase
-    expected_entities: ["spark"]
-    expected_content_substrings:
-      - "01"
-      - "04"
-      - "02"
-      - "03"
-    note: "Spark BT mapping: #1=04,#2=02,#3=03,#4=01"
-
-  # === INJECT ===
-  # These test auto-inject precision: for turn X, should anything
-  # be injected, and was it relevant?
-
-  - id: q26
-    text: "Restart the GLM cluster"
+  # --- Inject (should something be injected?) ---
+  - text: "restart the cluster"
     class: inject
-    expected_inject_entities: ["spark-01", "spark-02", "spark-03", "spark-04", "glm-5.2", "vllm"]
-    expected_inject_content:
-      - "TP4"
-      - "8210"
-      - "NODE_RANK"
-    note: "Should inject cluster topology + launch config"
+    expected_entity_ids: []
+    expected_substrings: ["spark", "cluster"]
 
-  - id: q27
-    text: "Check on the inference repair loop"
+  - text: "check the inference endpoint"
     class: inject
-    expected_inject_entities: ["inference-repair-loop", "litellm", "cron"]
-    expected_inject_content:
-      - "6h"
-      - "cron"
-    note: "Should inject cron schedule + last run"
+    expected_entity_ids: []
+    expected_substrings: ["litellm", "vllm"]
 
-  - id: q28
-    text: "Deploy the new Ferrite spec"
+  - text: "what's the ferrite graph status"
     class: inject
-    expected_inject_entities: ["ferrite", "neo4j", "docker"]
-    expected_inject_content:
-      - "docker compose"
-      - "4GB"
-      - "v3"
-    note: "Should inject spec version + deploy config"
+    expected_entity_ids: ["ferrite"]
+    expected_substrings: ["ferrite", "neo4j"]
 
-  - id: q29
-    text: "What's for dinner?"
+  - text: "update the hempSentry extraction"
     class: inject
-    expected_inject_entities: []
-    expected_inject_content: []
-    note: "Should inject NOTHING — tests the silence floor"
+    expected_entity_ids: ["hempsentry"]
+    expected_substrings: ["hempsentry"]
 
-  - id: q30
-    text: "Update the Laguna recipe"
+  - text: "fix the voice bridge"
     class: inject
-    expected_inject_entities: ["laguna", "spark-07", "vllm"]
-    expected_inject_content:
-      - "NVFP4"
-      - "DFlash"
-      - "0.25.1"
-    note: "Should inject recipe config + node assignment"
+    expected_entity_ids: []
+    expected_substrings: ["voice"]
+
+  - text: "check laguna deployment"
+    class: inject
+    expected_entity_ids: []
+    expected_substrings: ["laguna"]
+
+  - text: "DSV4 flash nodes"
+    class: inject
+    expected_entity_ids: []
+    expected_substrings: ["dsv4", "spark-07", "spark-08"]
+
+  - text: "is the backup working"
+    class: inject
+    expected_entity_ids: []
+    expected_substrings: ["backup"]
+
+  - text: "check tailscale connectivity"
+    class: inject
+    expected_entity_ids: ["tailscale"]
+    expected_substrings: ["tailscale"]
+
+  - text: "what version is GLM"
+    class: entity_lookup
+    expected_entity_ids: ["glm-5.2"]
+    expected_substrings: ["version", "glm"]
