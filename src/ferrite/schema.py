@@ -27,6 +27,14 @@ SCHEMA_DDL: list[str] = [
 
     # Episode index
     "CREATE INDEX episode_recorded_at_idx IF NOT EXISTS FOR (ep:Episode) ON (ep.recorded_at)",
+
+    # Vector index for semantic search (§7.3, §7.4)
+    "CREATE VECTOR INDEX fact_embeddings IF NOT EXISTS "
+    "FOR (f:Fact) ON (f.embedding) "
+    "OPTIONS {indexConfig: {"
+    "`vector.dimensions`: 768, "
+    "`vector.similarity_function`: 'cosine'"
+    "}}",
 ]
 
 

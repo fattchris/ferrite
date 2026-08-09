@@ -280,4 +280,18 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             queue_depth=queue_depth,
         )
 
+    @app.get("/metrics")
+    async def metrics():
+        """Detailed metrics and health checks."""
+        from .metrics import get_metrics
+        from .observability import HealthMonitor
+
+        result: dict = {"metrics": get_metrics().snapshot()}
+
+        if pipeline is not None:
+            monitor = HealthMonitor(pipeline.driver, pipeline.redis_client)
+            result["health"] = monitor.run_all()
+
+        return result
+
     return app

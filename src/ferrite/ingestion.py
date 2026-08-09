@@ -307,6 +307,21 @@ class IngestionPipeline:
                     value=object_value,
                 )
 
+            # Embed the fact statement (§7.3 F-2: fact statements are embedded)
+            embedding_val = None
+            if self.embedding_func is not None:
+                try:
+                    embedding_val = self.embedding_func(fact.statement)
+                except Exception as e:
+                    logger.warning("Embedding failed for fact %s: %s", fact.id, e)
+
+            if embedding_val is not None:
+                session.run(
+                    "MATCH (f:Fact {id: $fact_id}) SET f.embedding = $embedding",
+                    fact_id=fact.id,
+                    embedding=embedding_val,
+                )
+
             # Link provenance
             session.run(
                 """

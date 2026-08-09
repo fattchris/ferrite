@@ -298,20 +298,39 @@ def search_facts(
     query: str,
     namespace: Optional[str] = None,
     limit: int = 10,
+    embedder=None,
 ) -> list[dict]:
-    """Fulltext search on fact statements.
+    """Hybrid search on fact statements (BM25 + vector cosine via RRF).
 
-    Uses the Neo4j fulltext index 'fact_statement_fulltext' on Fact.statement.
+    Falls back to BM25-only if no embedder or Ollama is unreachable.
 
     Args:
         driver: Neo4j driver instance.
-        query: Search query string (supports Lucene-style syntax).
-        namespace: Optional namespace filter ('shared' or 'personal').
+        query: Search query string.
+        namespace: Optional namespace filter.
         limit: Maximum number of results (default 10).
+        embedder: Optional OllamaEmbedder for semantic search.
 
     Returns:
         List of dicts with fact id, statement, predicate, score, and metadata.
     """
+    # Try hybrid search if embedder is available
+    if embedder is not None:
+        results = hybrid_search(driver, query, embedder, namespace=namespace, limit=limit)
+        if results:
+            return results
+        # Fall through to BM25-only if vector search returned nothing
+
+    return _bm25_search(driver, query, namespace=namespace, limit=limit)
+
+
+def _bm25_search(
+    driver,
+    query: str,
+    namespace: Optional[str] = None,
+    limit: int = 10,
+) -> list[dict]:
+    """Fulltext (BM25) search on fact statements."""
     ns_filter = "AND f.namespace = $namespace" if namespace else ""
 
     with driver.session() as session:
@@ -338,6 +357,102 @@ def search_facts(
             limit=limit,
         )
         return [dict(r) for r in result]
+
+
+def vector_search(
+    driver,
+    query_text: str,
+    embedder,
+    namespace: Optional[str] = None,
+    limit: int = 10,
+) -> list[dict]:
+    """Semantic vector search using Neo4j vector index.
+
+    Embeds the query, searches the fact_embeddings vector index.
+    Returns empty list if Ollama is unreachable or vector index missing.
+    """
+    query_embedding = embedder.embed(query_text)
+    if query_embedding is None:
+        return []
+
+    ns_filter = "WHERE f.namespace = $namespace" if namespace else ""
+    params: dict = {"embedding": query_embedding, "limit": limit}
+    if namespace:
+        params["namespace"] = namespace
+
+    try:
+        with driver.session() as session:
+            result = session.run(
+                f"""
+                CALL db.index.vector.queryNodes('fact_embeddings', $limit, $embedding)
+                YIELD node AS f, score
+                WHERE f:Fact
+                {ns_filter}
+                RETURN f.id AS id,
+                       f.statement AS statement,
+                       f.predicate AS predicate,
+                       f.certainty AS certainty,
+                       f.epistemic_state AS epistemic_state,
+                       f.namespace AS namespace,
+                       f.valid_at AS valid_at,
+                       f.recorded_at AS recorded_at,
+                       score
+                ORDER BY score DESC
+                """,
+                **params,
+            )
+            return [dict(r) for r in result]
+    except Exception as e:
+        logger.warning("Vector search failed (degrading to BM25): %s", e)
+        return []
+
+
+def hybrid_search(
+    driver,
+    query_text: str,
+    embedder,
+    namespace: Optional[str] = None,
+    limit: int = 10,
+    rrf_k: int = 60,
+) -> list[dict]:
+    """Hybrid search combining BM25 fulltext + vector cosine via RRF.
+
+    RRF formula: score = sum(1/(k + rank_i)) for each strategy.
+    Falls back to BM25-only if vector search is unavailable.
+    """
+    # Run both searches in parallel (could be async later)
+    bm25_results = _bm25_search(driver, query_text, namespace=namespace, limit=limit * 2)
+    vec_results = vector_search(driver, query_text, embedder, namespace=namespace, limit=limit * 2)
+
+    if not vec_results:
+        # No vector results — return BM25 only
+        return bm25_results[:limit]
+
+    # RRF fusion: combine by rank
+    rrf_scores: dict[str, float] = {}
+    fact_data: dict[str, dict] = {}
+
+    for rank, r in enumerate(bm25_results):
+        fid = r["id"]
+        rrf_scores[fid] = rrf_scores.get(fid, 0) + 1.0 / (rrf_k + rank + 1)
+        fact_data[fid] = r
+
+    for rank, r in enumerate(vec_results):
+        fid = r["id"]
+        rrf_scores[fid] = rrf_scores.get(fid, 0) + 1.0 / (rrf_k + rank + 1)
+        if fid not in fact_data:
+            fact_data[fid] = r
+
+    # Sort by RRF score
+    sorted_ids = sorted(rrf_scores, key=rrf_scores.get, reverse=True)
+
+    results = []
+    for fid in sorted_ids[:limit]:
+        r = dict(fact_data[fid])
+        r["score"] = rrf_scores[fid]
+        results.append(r)
+
+    return results
 
 
 def get_entity_facts(driver, entity_name: str) -> dict:

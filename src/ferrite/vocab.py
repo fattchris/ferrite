@@ -65,7 +65,7 @@ PREDICATE_VOCAB: dict[str, dict] = {
     "has_memory": {"functional": True, "description": "Device has specific memory amount"},
 
     # --- Memory & preference predicates (for Hermes memory provider) ---
-    "prefers": {"functional": False, "description": "Entity prefers a setting, format, or behavior"},
+    "prefers": {"functional": False, "description": "Entity prefers a setting or behavior"},
     "has_preference": {"functional": False, "description": "Entity has a specific preference"},
     "has_timezone": {"functional": True, "description": "Entity uses a specific timezone"},
     "has_profile": {"functional": True, "description": "Person has a specific profile name"},
