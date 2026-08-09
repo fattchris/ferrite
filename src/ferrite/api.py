@@ -182,7 +182,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         with pipeline.driver.session() as session:
             result = session.run(
                 f"""
-                CALL db.index.fulltext.queryNodes('fact_statement_fulltext', $query)
+                CALL db.index.fulltext.queryNodes('fact_statement_fulltext', $search_query)
                 YIELD node AS f, score
                 WHERE f:Fact
                 {ns_filter}
@@ -193,7 +193,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 ORDER BY score DESC
                 LIMIT $limit
                 """,
-                query=query,
+                search_query=query,
                 namespace=namespace,
                 limit=limit,
             )
@@ -438,3 +438,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         return {"status": "reset", "state": "closed"}
 
     return app
+
+
+# Module-level app for uvicorn
+app = create_app()
