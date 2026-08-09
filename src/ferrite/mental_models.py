@@ -155,7 +155,7 @@ def search_mental_models(
     """
     ns_filter = "AND m.namespace = $namespace" if namespace else ""
 
-    params: dict = {"query": query, "limit": limit}
+    params: dict = {"search_text": query, "limit": limit}
     if namespace:
         params["namespace"] = namespace
 
@@ -163,7 +163,7 @@ def search_mental_models(
         try:
             result = s.run(
                 f"""
-                CALL db.index.fulltext.queryNodes('fact_statement_fulltext', $query)
+                CALL db.index.fulltext.queryNodes('fact_statement_fulltext', $search_text)
                 YIELD node, score
                 WHERE node:mental_model
                 {ns_filter}
@@ -185,8 +185,8 @@ def search_mental_models(
             result = s.run(
                 f"""
                 MATCH (m:mental_model)
-                WHERE toLower(m.title) CONTAINS toLower($query)
-                   OR toLower(m.summary) CONTAINS toLower($query)
+                WHERE toLower(m.title) CONTAINS toLower($search_text)
+                   OR toLower(m.summary) CONTAINS toLower($search_text)
                 {ns_filter}
                 RETURN m.id AS id,
                        m.title AS title,

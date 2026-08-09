@@ -63,7 +63,7 @@ class StoreResponse(BaseModel):
 class SearchResult(BaseModel):
     id: str
     statement: str
-    certainty: str
+    certainty: float
     source: str
     valid_at: str
 
