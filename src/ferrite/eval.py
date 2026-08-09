@@ -21,7 +21,7 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_QUERIES_FILE = Path(__file__).parent.parent / "eval" / "queries.yaml"
+DEFAULT_QUERIES_FILE = Path(__file__).parent.parent.parent / "eval" / "queries.yaml"
 
 
 def load_queries(queries_file: Optional[Path] = None) -> list[dict]:
