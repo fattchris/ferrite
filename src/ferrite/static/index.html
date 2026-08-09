@@ -445,8 +445,17 @@
                 // Load entities
                 const entList = document.getElementById('entityList');
                 entList.innerHTML = '<div class="loading">Loading entities...</div>';
-                // We'll use the search endpoint to find some
-                const searchResults = await apiGet('/search?query=*&limit=20');
+                // Use a broad search to find some entities
+                let searchResults = {results: []};
+                try {
+                    searchResults = await apiGet('/search?query=spark&limit=20');
+                } catch(e) {
+                    try {
+                        searchResults = await apiGet('/search?query=GLM&limit=20');
+                    } catch(e2) {
+                        searchResults = {results: []}
+                    }
+                }
                 entList.innerHTML = searchResults.results.map(r => `
                     <div class="card entity-card" onclick="loadEntity('${r.id}')">
                         <h3>${r.statement}</h3>
