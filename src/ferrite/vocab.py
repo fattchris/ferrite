@@ -42,6 +42,27 @@ PREDICATE_VOCAB: dict[str, dict] = {
     "acquired_by": {"functional": True, "description": "Entity acquired by another"},
     "replaced_by": {"functional": True, "description": "Entity replaced by another"},
     "named": {"functional": True, "description": "Entity has a formal name"},
+
+    # --- Infrastructure & operational predicates ---
+    "has_ip": {"functional": True, "description": "Entity has an IP address"},
+    "runs_model": {"functional": True, "description": "Node runs a specific model"},
+    "deployed_on": {"functional": True, "description": "Model deployed on a node/cluster"},
+    "has_gpu": {"functional": True, "description": "Node has a specific GPU type"},
+    "has_throughput": {"functional": True, "description": "Model has specific throughput"},
+    "has_version": {"functional": True, "description": "Entity has a specific software version"},
+    "configured_with": {"functional": False, "description": "Entity configured with a setting"},
+    "head_node_of": {"functional": True, "description": "Node is head of a cluster"},
+    "part_of_cluster": {"functional": False, "description": "Node is part of a cluster"},
+    "has_role": {"functional": True, "description": "Person has a role at organization"},
+    "founded_in": {"functional": True, "description": "Organization founded in year/date"},
+    "located_at": {"functional": True, "description": "Entity located at address"},
+    "has_port": {"functional": True, "description": "Service runs on port"},
+    "connects_to": {"functional": False, "description": "Entity connects to another"},
+    "uses_framework": {"functional": False, "description": "Entity uses a framework"},
+    "rejected": {"functional": False, "description": "Experiment/feature was rejected"},
+    "has_regression": {"functional": True, "description": "Experiment has regression percentage"},
+    "parent_brand_of": {"functional": False, "description": "Brand is parent of another"},
+    "has_memory": {"functional": True, "description": "Device has specific memory amount"},
 }
 
 

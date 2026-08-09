@@ -1,0 +1,302 @@
+[
+  {
+    "id": "q01",
+    "text": "What model is running on Spark 07?",
+    "class": "entity_lookup",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 28,
+    "result_summary": "[{\"statement\": \"spark-07 runs_model laguna-s-2-1\", \"model\": \"laguna-s-2-1\"}, {\"statement\": \"spark-07 runs_model dsv4-flash-ablit\", \"model\": \"dsv4-flash-ablit\"}, {\"id\": \"4141eb8d-378d-4719-8e73-050351e9d8e9\", \"statement\": \"mtp-5 rejected 42% regression on GB10\", \"predicate\": \"rejected\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 1.9653148651123047}, {\"id\": \"5f2ca777-f0b6-4c12-a69f-682"
+  },
+  {
+    "id": "q02",
+    "text": "Which Spark nodes are running GLM-5.2?",
+    "class": "entity_lookup",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 51,
+    "result_summary": "[{\"node\": \"spark-04\", \"statement\": \"spark-04 runs_model glm-5.2\"}, {\"node\": \"spark-03\", \"statement\": \"spark-03 runs_model glm-5.2\"}, {\"node\": \"spark-02\", \"statement\": \"spark-02 runs_model glm-5.2\"}, {\"node\": \"spark-01\", \"statement\": \"spark-01 runs_model glm-5.2\"}, {\"id\": \"230e0957-650b-4e67-bcd7-332ca7ee2e6d\", \"statement\": \"inference-repair-loop has_role cron job running every 6h to repair inference\", \"predicate\": \"has_role\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shar"
+  },
+  {
+    "id": "q03",
+    "text": "What's the Tailscale IP for the Mac Mini?",
+    "class": "entity_lookup",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 14,
+    "result_summary": "[{\"statement\": \"mac-mini has_ip 100.90.179.92\", \"ip_address\": \"100.90.179.92\"}, {\"id\": \"c85d91e8-1d1b-499e-b39c-ae1f2d13b698\", \"statement\": \"mac-mini connects_to tailscale\", \"predicate\": \"connects_to\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 3.2616488933563232}, {\"id\": \"b4242742-f7ae-4549-bc2d-f75af4cecdef\", \"statement\": \"m3pro connects_to tailscale\", \"predicate\": \"connects_to\", \""
+  },
+  {
+    "id": "q04",
+    "text": "What vLLM version are we using on the Sparks?",
+    "class": "entity_lookup",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 12,
+    "result_summary": "[{\"id\": \"4141eb8d-378d-4719-8e73-050351e9d8e9\", \"statement\": \"mtp-5 rejected 42% regression on GB10\", \"predicate\": \"rejected\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 1.9653148651123047}, {\"id\": \"95c529c6-ae94-49ed-89b3-ba630f7239e9\", \"statement\": \"vllm uses_framework vLLM V1 engine\", \"predicate\": \"uses_framework\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \""
+  },
+  {
+    "id": "q05",
+    "text": "What's the LiteLLM proxy address?",
+    "class": "entity_lookup",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 35,
+    "result_summary": "[{\"statement\": \"litellm configured_with endpoint: http://localhost:4000/v1\", \"predicate\": \"configured_with\", \"subject\": \"litellm\", \"object_value\": \"endpoint: http://localhost:4000/v1\"}, {\"statement\": \"litellm configured_with proxy address: localhost:4000\", \"predicate\": \"configured_with\", \"subject\": \"litellm\", \"object_value\": \"proxy address: localhost:4000\"}, {\"statement\": \"litellm configured_with API key: sk-litellm (redacted)\", \"predicate\": \"configured_with\", \"subject\": \"litellm\", \"object_value"
+  },
+  {
+    "id": "q06",
+    "text": "Which Spark node is the head node for GLM?",
+    "class": "entity_lookup",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 37,
+    "result_summary": "[{\"id\": \"5f2ca777-f0b6-4c12-a69f-682a9754c077\", \"statement\": \"ferrite configured_with parent brand is Kassett, a magnetic compound\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 1.7285473346710205}, {\"id\": \"257f58a0-ced1-4243-87f9-685a9e3f6950\", \"statement\": \"mellanox has_role network switch vendor for DGX Spark cluster\", \"predicate\": \"has_role\", \"certai"
+  },
+  {
+    "id": "q07",
+    "text": "What's Haylie's role?",
+    "class": "entity_lookup",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 8,
+    "result_summary": "[{\"statement\": \"haylie has_role COO of high spirits\", \"role\": \"COO of high spirits\"}, {\"id\": \"cc20fcf0-da95-40e5-aea2-e54bf792a556\", \"statement\": \"haylie works_at high-spirits\", \"predicate\": \"works_at\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"functional\": true, \"valid_at\": \"2026-07-01T00:00:00\", \"invalid_at\": null, \"recorded_at\": \"2026-07-01T00:00:00\", \"namespace\": \"shared\", \"object_value\": \"high-spirits\"}, {\"id\": \"7956fc38-f824-4a91-b0ce-98450ba72c39\", \"statement\": \"haylie has_role"
+  },
+  {
+    "id": "q08",
+    "text": "What GPU does the DGX Spark use?",
+    "class": "entity_lookup",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 10,
+    "result_summary": "[{\"id\": \"8ffddd92-a86e-464c-847c-439042ac2157\", \"statement\": \"GB10 related_to DGX Spark\", \"predicate\": \"related_to\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 2.20941424369812}, {\"id\": \"c250ccc1-0d43-48e6-ab0d-8efff52a3500\", \"statement\": \"dgx-spark connects_to sn2700\", \"predicate\": \"connects_to\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": "
+  },
+  {
+    "id": "q09",
+    "text": "What's the GLM-5.2 throughput with DCP2 and MTP5?",
+    "class": "entity_lookup",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 23,
+    "result_summary": "[{\"id\": \"06e7772d-697c-4e04-83d0-ea967b823b4d\", \"statement\": \"glm-5.2 configured_with DCP2+MTP5=63.7 tok/s throughput\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 4.589659690856934}, {\"id\": \"def4883f-b77e-42ac-9ab1-93e74fd70a15\", \"statement\": \"glm-5.2 configured_with DCP2\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"acti"
+  },
+  {
+    "id": "q10",
+    "text": "What's the API key for LiteLLM?",
+    "class": "entity_lookup",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 23,
+    "result_summary": "[{\"id\": \"3028edfc-1da6-4a94-9261-28bbeab9fc9a\", \"statement\": \"litellm configured_with API key: sk-litellm (redacted)\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 3.9306297302246094}, {\"id\": \"4db4bf19-40b9-455c-ba63-78b188fe88bc\", \"statement\": \"memory configured_with 4GB mem_limit for Neo4j\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epist"
+  },
+  {
+    "id": "q11",
+    "text": "What did we install on LiteLLM a month ago? Something about persistence",
+    "class": "temporal",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 30,
+    "result_summary": "[{\"statement\": \"litellm configured_with launchd plist for persistence\", \"predicate\": \"configured_with\", \"subject\": \"litellm\", \"object_value\": \"launchd plist for persistence\", \"recorded_at\": \"2026-07-01T00:00:00\"}, {\"statement\": \"litellm configured_with venv=~/.venvs/litellm\", \"predicate\": \"configured_with\", \"subject\": \"litellm\", \"object_value\": \"venv=~/.venvs/litellm\", \"recorded_at\": \"2026-07-01T00:00:00\"}, {\"statement\": \"litellm configured_with master_key=sk-litellm-redacted\", \"predicate\": \"con"
+  },
+  {
+    "id": "q12",
+    "text": "When did we set up the DGX Spark cluster?",
+    "class": "temporal",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 10,
+    "result_summary": "[{\"id\": \"8ffddd92-a86e-464c-847c-439042ac2157\", \"statement\": \"GB10 related_to DGX Spark\", \"predicate\": \"related_to\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 2.20941424369812}, {\"id\": \"c250ccc1-0d43-48e6-ab0d-8efff52a3500\", \"statement\": \"dgx-spark connects_to sn2700\", \"predicate\": \"connects_to\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": "
+  },
+  {
+    "id": "q13",
+    "text": "What did we know about GLM-5.2 performance on July 1st?",
+    "class": "temporal",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 21,
+    "result_summary": "[{\"id\": \"ff4f152c-406f-4c3e-9a24-33a44e83409c\", \"statement\": \"glm-5.2 connects_to glm-cluster\", \"predicate\": \"connects_to\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 2.201751232147217}, {\"id\": \"2eb84774-0652-4ff3-9a53-1822dc95c9fa\", \"statement\": \"glm-5.2 configured_with MTP5\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", "
+  },
+  {
+    "id": "q14",
+    "text": "What was the GLM MTP-5 result?",
+    "class": "temporal",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 27,
+    "result_summary": "[{\"id\": \"d428098b-fe6f-4dfa-915b-b37594724541\", \"statement\": \"mtp-5 has_regression 42%\", \"predicate\": \"has_regression\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 3.8396506309509277}, {\"id\": \"af88e0c8-8aaf-48ad-8774-68132ecc520c\", \"statement\": \"mtp-5 configured_with 12.6% acceptance rate\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\""
+  },
+  {
+    "id": "q15",
+    "text": "What version of the abliterated model did we deploy on Spark 07?",
+    "class": "temporal",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 23,
+    "result_summary": "[{\"id\": \"6b56253b-bdf2-45c9-985e-c8c298c29693\", \"statement\": \"ferrite configured_with docker compose deploy\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 2.2772397994995117}, {\"id\": \"4141eb8d-378d-4719-8e73-050351e9d8e9\", \"statement\": \"mtp-5 rejected 42% regression on GB10\", \"predicate\": \"rejected\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"n"
+  },
+  {
+    "id": "q16",
+    "text": "What model runs on the node that has the Laguna recipe?",
+    "class": "multi_hop",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 26,
+    "result_summary": "[{\"id\": \"4141eb8d-378d-4719-8e73-050351e9d8e9\", \"statement\": \"mtp-5 rejected 42% regression on GB10\", \"predicate\": \"rejected\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 1.9653148651123047}, {\"id\": \"08aaebee-8c11-47bd-ae60-03ee7cdc31c6\", \"statement\": \"hermes-voice-bridge configured_with VAD always runs\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"activ"
+  },
+  {
+    "id": "q17",
+    "text": "Which Mac runs the Hermes Voice Bridge?",
+    "class": "multi_hop",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 10,
+    "result_summary": "[{\"id\": \"08aaebee-8c11-47bd-ae60-03ee7cdc31c6\", \"statement\": \"hermes-voice-bridge configured_with VAD always runs\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 4.5169878005981445}, {\"id\": \"0ed0f463-c1cd-4f48-a392-21d834fe5efb\", \"statement\": \"hermes-voice-bridge has_port 8005\", \"predicate\": \"has_port\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", "
+  },
+  {
+    "id": "q18",
+    "text": "What's the connection between hempSentry and the KG pipeline?",
+    "class": "multi_hop",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 14,
+    "result_summary": "[{\"id\": \"fdc3cbb0-9c2d-466a-ab1c-0f8bf82a6f6e\", \"statement\": \"legal-kg connects_to hempsentry\", \"predicate\": \"connects_to\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 3.1814212799072266}, {\"id\": \"89cd531e-ff5f-437d-89ed-b7aa0fe26997\", \"statement\": \"kg-pipeline connects_to hempsentry\", \"predicate\": \"connects_to\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared"
+  },
+  {
+    "id": "q19",
+    "text": "Which Spark nodes make up the DS-V4-Flash cluster?",
+    "class": "multi_hop",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 19,
+    "result_summary": "[{\"id\": \"094e19fd-7053-4ede-8724-f213a7f9b010\", \"statement\": \"dsv4-flash-ablit configured_with DS-V4-Flash\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 5.572444438934326}, {\"id\": \"8231c1fb-9716-4b6b-ac6d-61ecc1611bb9\", \"statement\": \"spark-07 runs_model dsv4-flash-ablit\", \"predicate\": \"runs_model\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"na"
+  },
+  {
+    "id": "q20",
+    "text": "What's the relationship between Ferrite and Kassett?",
+    "class": "multi_hop",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 15,
+    "result_summary": "[{\"statement\": \"ferrite parent_brand_of kassett\", \"predicate\": \"parent_brand_of\", \"subject\": \"ferrite\", \"object\": \"kassett\"}, {\"statement\": \"kassett parent_brand_of ferrite\", \"predicate\": \"parent_brand_of\", \"subject\": \"kassett\", \"object\": \"ferrite\"}, {\"id\": \"4093a717-4b55-4d7c-94df-cdfcc6230854\", \"statement\": \"ferrite parent_brand_of kassett\", \"predicate\": \"parent_brand_of\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at"
+  },
+  {
+    "id": "q21",
+    "text": "How fast is GLM generating tokens?",
+    "class": "paraphrase",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 25,
+    "result_summary": "[{\"id\": \"5f2ca777-f0b6-4c12-a69f-682a9754c077\", \"statement\": \"ferrite configured_with parent brand is Kassett, a magnetic compound\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 1.7285473346710205}, {\"id\": \"ff4f152c-406f-4c3e-9a24-33a44e83409c\", \"statement\": \"glm-5.2 connects_to glm-cluster\", \"predicate\": \"connects_to\", \"certainty\": \"stated\", \"epistemic_"
+  },
+  {
+    "id": "q22",
+    "text": "Where is Neo4j running?",
+    "class": "paraphrase",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 19,
+    "result_summary": "[{\"id\": \"5f2ca777-f0b6-4c12-a69f-682a9754c077\", \"statement\": \"ferrite configured_with parent brand is Kassett, a magnetic compound\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 1.7285473346710205}, {\"id\": \"6ef37a07-e152-4f19-990b-556adc51716d\", \"statement\": \"oom connects_to neo4j\", \"predicate\": \"connects_to\", \"certainty\": \"stated\", \"epistemic_state\": \"a"
+  },
+  {
+    "id": "q23",
+    "text": "How do we stop the Neo4j from OOMing?",
+    "class": "paraphrase",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 16,
+    "result_summary": "[{\"id\": \"fc0c3e55-fe38-481a-aa1a-6372db610491\", \"statement\": \"memory connects_to neo4j\", \"predicate\": \"connects_to\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-08-01T00:00:00\", \"recorded_at\": \"2026-08-01T00:00:00\", \"score\": 1.3843022584915161}, {\"id\": \"6ef37a07-e152-4f19-990b-556adc51716d\", \"statement\": \"oom connects_to neo4j\", \"predicate\": \"connects_to\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026"
+  },
+  {
+    "id": "q24",
+    "text": "Who is the COO of High Spirits?",
+    "class": "paraphrase",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 10,
+    "result_summary": "[{\"id\": \"7956fc38-f824-4a91-b0ce-98450ba72c39\", \"statement\": \"haylie has_role COO of high spirits\", \"predicate\": \"has_role\", \"certainty\": \"stated\", \"epistemic_state\": \"active\", \"namespace\": \"shared\", \"valid_at\": \"2026-07-01T00:00:00\", \"recorded_at\": \"2026-07-01T00:00:00\", \"score\": 5.21948766708374}, {\"id\": \"5f2ca777-f0b6-4c12-a69f-682a9754c077\", \"statement\": \"ferrite configured_with parent brand is Kassett, a magnetic compound\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"epistemic_s"
+  },
+  {
+    "id": "q25",
+    "text": "What's the Spark bluetooth mapping?",
+    "class": "paraphrase",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 12,
+    "result_summary": "[{\"f.statement\": \"spark configured_with bluetooth mapping: #1=spark-04, #2=spark-02, #3=spark-03, #4=spark-01\", \"f.predicate\": \"configured_with\", \"object_value\": \"bluetooth mapping: #1=spark-04, #2=spark-02, #3=spark-03, #4=spark-01\"}, {\"f.statement\": \"spark has_role DGX Spark fleet with bluetooth mapping\", \"f.predicate\": \"has_role\", \"object_value\": \"DGX Spark fleet with bluetooth mapping\"}, {\"id\": \"4b2d0648-c232-4448-af16-5c4429801e3b\", \"statement\": \"spark has_role DGX Spark fleet with bluetoot"
+  },
+  {
+    "id": "q26",
+    "text": "Restart the GLM cluster",
+    "class": "inject",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 52,
+    "result_summary": "[{\"id\": \"3e6e3e4f-9be6-444e-934b-9159286fd103\", \"statement\": \"dsv4-cluster has_port 8210\", \"predicate\": \"has_port\", \"certainty\": \"stated\", \"valid_at\": \"2026-07-01T00:00:00\", \"object_value\": \"8210\"}, {\"id\": \"31e769bd-66c8-4f33-8381-6de6767fd3d9\", \"statement\": \"dsv4-cluster configured_with TP2\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"valid_at\": \"2026-07-01T00:00:00\", \"object_value\": \"TP2\"}, {\"id\": \"4bf50600-d3f6-454c-82b6-9a1585bd7a45\", \"statement\": \"dsv4-cluster has_gpu GB10\", \"p"
+  },
+  {
+    "id": "q27",
+    "text": "Check on the inference repair loop",
+    "class": "inject",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 5,
+    "result_summary": "[{\"id\": \"1d20af49-3802-4e70-8ed8-8d4505477d0e\", \"statement\": \"inference-repair-loop connects_to litellm\", \"predicate\": \"connects_to\", \"certainty\": \"stated\", \"valid_at\": \"2026-07-01T00:00:00\", \"object_value\": \"litellm\"}, {\"id\": \"472930e1-49cb-475e-950b-25d65b5f9c7d\", \"statement\": \"inference-repair-loop configured_with cron schedule: every 6h\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"valid_at\": \"2026-07-01T00:00:00\", \"object_value\": \"cron schedule: every 6h\"}, {\"id\": \"230e0957-650b"
+  },
+  {
+    "id": "q28",
+    "text": "Deploy the new Ferrite spec",
+    "class": "inject",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 22,
+    "result_summary": "[{\"id\": \"8650916d-e37c-4df6-8836-60182f8cecaf\", \"statement\": \"neo4j configured_with OOM prevention: 4GB mem_limit + pagecache tuning\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"valid_at\": \"2026-08-01T00:00:00\", \"object_value\": \"OOM prevention: 4GB mem_limit + pagecache tuning\"}, {\"id\": \"fd9d7d09-e08a-4a52-bdc8-3c3430e935b3\", \"statement\": \"neo4j configured_with pagecache tuning for OOM prevention\", \"predicate\": \"configured_with\", \"certainty\": \"stated\", \"valid_at\": \"2026-08-01T00:00:"
+  },
+  {
+    "id": "q29",
+    "text": "What's for dinner?",
+    "class": "inject",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 0,
+    "result_summary": "Silence floor: 0 results"
+  },
+  {
+    "id": "q30",
+    "text": "Update the Laguna recipe",
+    "class": "inject",
+    "passed": true,
+    "missing_entities": [],
+    "missing_substrings": [],
+    "raw_result_count": 15,
+    "result_summary": "[{\"id\": \"7623bfc0-fc9d-4081-ad39-9b652f30a6fc\", \"statement\": \"spark-07 runs_model laguna-s-2-1\", \"predicate\": \"runs_model\", \"certainty\": \"stated\", \"valid_at\": \"2026-06-01T00:00:00\", \"object_value\": \"laguna-s-2-1\"}, {\"id\": \"edbe9cb3-52db-4d4a-8178-f669a15c9a64\", \"statement\": \"spark-07 part_of_cluster dsv4-cluster\", \"predicate\": \"part_of_cluster\", \"certainty\": \"stated\", \"valid_at\": \"2026-07-01T00:00:00\", \"object_value\": \"dsv4-cluster\"}, {\"id\": \"8231c1fb-9716-4b6b-ac6d-61ecc1611bb9\", \"statement\": \""
+  }
+]

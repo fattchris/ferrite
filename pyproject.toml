@@ -12,6 +12,7 @@ dependencies = [
     "httpx",
     "numpy",
     "openai",
+    "pyyaml>=6.0.3",
 ]
 
 [project.optional-dependencies]
@@ -31,3 +32,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/seed.py" = ["E501"]
+"scripts/eval.py" = ["E501"]
