@@ -1,0 +1,20 @@
+{
+  "timestamp": "2026-08-09T17:41:57.218931",
+  "action": "gap_build_attempt",
+  "gap": {
+    "id": "GAP-004",
+    "spec": "\u00a76.3",
+    "title": "CI grep test banning raw MATCH strings",
+    "resolved": false,
+    "build_instructions": "Add a CI step in .github/workflows/ci.yml that greps src/ferrite/*.py for raw 'MATCH' strings (banned per \u00a76.3 \u2014 all Cypher must go through a query builder that injects namespace filters). The grep should fail the build if raw MATCH is found in handler code (excluding test files and the query.py builder itself). Example: grep -rn 'MATCH' src/ferrite/*.py | grep -v query.py | grep -v test_ && exit 1 || true",
+    "attempts": 0,
+    "last_attempt": null
+  },
+  "result": {
+    "status": "task_written",
+    "task_path": "/Users/fontes/ferrite/build_reports/task_GAP-004.json",
+    "message": "Build task for GAP-004 written to /Users/fontes/ferrite/build_reports/task_GAP-004.json. Run continue_build_agent.py from Hermes agent context to execute."
+  },
+  "verified": false,
+  "remaining": 1
+}

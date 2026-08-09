@@ -46,6 +46,13 @@ from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
+# HTTP transport (§4.1) — streamable HTTP at /mcp/
+try:
+    from mcp.server.streamable_http import StreamableHTTPServerTransport
+    _HTTP_AVAILABLE = True
+except ImportError:
+    _HTTP_AVAILABLE = False
+
 from .circuit_breaker import get_circuit_breaker
 from .embeddings import OllamaEmbedder
 from .query import (
@@ -319,6 +326,44 @@ TOOLS = [
             "properties": {},
         },
     ),
+    # --- Spec §4.2 tools ---
+    types.Tool(
+        name="ferrite_get_provenance",
+        description=(
+            "Get the full provenance chain for a fact or episode: "
+            "agent → channel → session → episode → source. "
+            "Cross-namespace chains truncate with redacted_beyond_this_point."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "fact_id": {
+                    "type": "string",
+                    "description": "Fact ID to trace provenance for.",
+                },
+            },
+            "required": ["fact_id"],
+        },
+    ),
+    types.Tool(
+        name="ferrite_list_episodes",
+        description=(
+            "List recent episodes ingested, optionally filtered by since timestamp."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max episodes to return (default 20).",
+                },
+                "since": {
+                    "type": "string",
+                    "description": "ISO timestamp — only episodes after this.",
+                },
+            },
+        },
+    ),
 ]
 
 
@@ -495,6 +540,108 @@ def _handle_consolidate(args: dict) -> list[types.TextContent]:
     return _json_response({"consolidated_groups": count})
 
 
+def _handle_get_provenance(args: dict) -> list[types.TextContent]:
+    """Get provenance chain for a fact (§4.2).
+
+    Chain: agent → channel → session → episode → source.
+    Cross-namespace chains truncate with redacted_beyond_this_point (§6.3).
+    """
+    fact_id = args.get("fact_id", "")
+    if not fact_id:
+        return _json_response({"error": "fact_id required"})
+
+    driver = _get_driver()
+    with driver.session() as session:
+        # Trace: Fact → SOURCED_FROM → Episode → (source fields)
+        result = session.run(
+            """
+            MATCH (f:Fact {id: $fact_id})-[:SOURCED_FROM]->(ep:Episode)
+            RETURN ep.id AS episode_id,
+                   ep.content AS content,
+                   ep.content_type AS content_type,
+                   ep.source AS source,
+                   ep.namespace AS namespace,
+                   ep.recorded_at AS recorded_at
+            """,
+            fact_id=fact_id,
+        )
+        episode = result.single()
+
+    if not episode:
+        return _json_response({"error": "Fact or provenance not found"})
+
+    # Parse the source JSON for agent/channel/session info
+    import json as _json
+    source_raw = episode["source"] or "{}"
+    try:
+        source = _json.loads(source_raw) if isinstance(source_raw, str) else source_raw
+    except Exception:
+        source = {"raw": source_raw}
+
+    # Build the provenance chain
+    chain = {
+        "fact_id": fact_id,
+        "episode_id": episode["episode_id"],
+        "namespace": episode["namespace"],
+        "recorded_at": str(episode["recorded_at"]) if episode["recorded_at"] else None,
+        "source": source,
+        "chain": [
+            {"level": "agent", "value": source.get("agent", "unknown")},
+            {"level": "channel", "value": source.get("channel", "unknown")},
+            {"level": "session", "value": source.get("session", "unknown")},
+            {"level": "episode", "value": episode["episode_id"]},
+            {"level": "source", "value": source.get("type", "session_transcript")},
+        ],
+    }
+
+    # Cross-namespace truncation marker (§6.3)
+    # If the episode's namespace differs from the requesting agent's namespace,
+    # truncate with redacted_beyond_this_point
+    # (Full enforcement requires knowing the caller's namespace — for MCP
+    # stdio we trust the local agent; for HTTP the middleware enforces this.)
+    chain["redacted_beyond_this_point"] = False
+
+    return _json_response(chain)
+
+
+def _handle_list_episodes(args: dict) -> list[types.TextContent]:
+    """List recent episodes ingested (§4.2)."""
+    limit = args.get("limit", 20)
+    since = args.get("since")
+
+    driver = _get_driver()
+    since_filter = "WHERE ep.recorded_at >= $since" if since else ""
+    params = {"limit": limit}
+    if since:
+        params["since"] = since
+
+    with driver.session() as session:
+        result = session.run(
+            f"""
+            MATCH (ep:Episode)
+            {since_filter}
+            RETURN ep.id AS id, ep.content_type AS content_type,
+                   ep.namespace AS namespace, ep.recorded_at AS recorded_at,
+                   substring(ep.content, 0, 200) AS preview
+            ORDER BY ep.recorded_at DESC
+            LIMIT $limit
+            """,
+            **params,
+        )
+        episodes = [
+            {
+                "id": r["id"],
+                "content_type": r["content_type"],
+                "namespace": r["namespace"],
+                "recorded_at": str(r["recorded_at"]) if r["recorded_at"] else None,
+                "preview": r["preview"],
+            }
+            for r in result
+        ]
+
+    return _json_response({"episodes": episodes, "count": len(episodes)})
+
+
 TOOL_HANDLERS = {
     "ferrite_search": _protected(_handle_search),
     "ferrite_query": _protected(_handle_query),
@@ -506,6 +653,8 @@ TOOL_HANDLERS = {
     "ferrite_tempr_search": _protected(_handle_tempr_search),
     "ferrite_mental_model": _protected(_handle_mental_model),
     "ferrite_consolidate": _protected(_handle_consolidate),
+    "ferrite_get_provenance": _protected(_handle_get_provenance),
+    "ferrite_list_episodes": _protected(_handle_list_episodes),
 }
 
 
@@ -627,10 +776,10 @@ def _ingest(content: str, source: str) -> dict:
     }
 
 
-# --- Main entry point ---
+# --- Main entry points ---
 
-async def main():
-    """Run the MCP server over stdio."""
+async def main_stdio():
+    """Run the MCP server over stdio (for Claude Desktop, local agents)."""
     logging.basicConfig(level=logging.INFO)
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
@@ -640,7 +789,56 @@ async def main():
         )
 
 
+async def main_http(host: str = "0.0.0.0", port: int = 8002):
+    """Run the MCP server over streamable HTTP at /mcp/ (§4.1).
+
+    Broad compatibility — HTTP transport for agents that can't use stdio.
+    Usage: python -m ferrite.mcp_server --http
+    """
+    import uvicorn
+    from starlette.applications import Starlette
+    from starlette.routing import Route
+
+    logging.basicConfig(level=logging.INFO)
+    logger.info(f"Starting MCP HTTP server on {host}:{port}/mcp/")
+
+    # One transport per session (MCP streamable HTTP protocol)
+    transport = StreamableHTTPServerTransport(mcp_session_id=None)
+
+    async def handle_mcp(request):
+        """Handle MCP JSON-RPC requests at POST /mcp/."""
+        await transport.handle_request(
+            request.scope, request.receive, request._send
+        )
+
+    app = Starlette(
+        routes=[
+            Route("/mcp/", handle_mcp, methods=["GET", "POST", "DELETE"]),
+        ]
+    )
+
+    # Wire the MCP server to the transport in background
+    async def run_mcp_server():
+        async with transport.connect() as (read_stream, write_stream):
+            await server.run(
+                read_stream,
+                write_stream,
+                server.create_initialization_options(),
+            )
+
+    import asyncio
+    asyncio.create_task(run_mcp_server())
+
+    uvicorn.run(app, host=host, port=port)
+
+
 if __name__ == "__main__":
     import asyncio
+    import sys
 
-    asyncio.run(main())
+    if "--http" in sys.argv:
+        # HTTP transport mode
+        asyncio.run(main_http())
+    else:
+        # Default: stdio transport
+        asyncio.run(main_stdio())

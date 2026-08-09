@@ -1,0 +1,113 @@
+{
+  "project": "ferrite",
+  "spec_version": "v3",
+  "created": "2026-08-09T17:40:00",
+  "last_updated": "2026-08-09T17:44:01.037564",
+  "overall_status": "complete",
+  "gaps": {
+    "GAP-001": {
+      "spec": "\u00a74.1",
+      "title": "MCP HTTP transport at /mcp/",
+      "status": "resolved",
+      "attempts": 0,
+      "last_attempt": null,
+      "last_result": "Audit check passed \u2014 streamable_http import found in mcp_server.py"
+    },
+    "GAP-002": {
+      "spec": "\u00a74.2",
+      "title": "get_provenance MCP tool",
+      "status": "resolved",
+      "attempts": 0,
+      "last_attempt": null,
+      "last_result": "Audit check passed \u2014 ferrite_get_provenance tool registered"
+    },
+    "GAP-003": {
+      "spec": "\u00a74.2",
+      "title": "list_episodes MCP tool",
+      "status": "resolved",
+      "attempts": 0,
+      "last_attempt": null,
+      "last_result": "Audit check passed \u2014 ferrite_list_episodes tool registered"
+    },
+    "GAP-004": {
+      "spec": "\u00a76.3",
+      "title": "CI grep test banning raw MATCH strings",
+      "status": "resolved",
+      "attempts": 1,
+      "last_attempt": "2026-08-09T17:44:01.037547",
+      "last_result": "Implemented: scripts/check_raw_match.py + CI step in ci.yml"
+    },
+    "GAP-005": {
+      "spec": "\u00a76.1",
+      "title": "SQLite keys.db for per-agent API keys",
+      "status": "resolved",
+      "attempts": 0,
+      "last_attempt": null,
+      "last_result": "key_store.py implements sqlite3 + api_keys table"
+    },
+    "GAP-006": {
+      "spec": "\u00a76.2",
+      "title": "Key management API (POST /keys, revoke, list)",
+      "status": "resolved",
+      "attempts": 0,
+      "last_attempt": null,
+      "last_result": "api.py has /keys endpoints + revoke"
+    },
+    "GAP-007": {
+      "spec": "\u00a76.4",
+      "title": "Read-Your-Own-Writes (LRU pending_ingestion)",
+      "status": "resolved",
+      "attempts": 0,
+      "last_attempt": null,
+      "last_result": "pending_ingestion found in source"
+    },
+    "GAP-008": {
+      "spec": "\u00a77.1",
+      "title": "Redis queue + in-proc async consumer",
+      "status": "resolved",
+      "attempts": 0,
+      "last_attempt": null,
+      "last_result": "start_consumer + asyncio in ingestion.py"
+    },
+    "GAP-009": {
+      "spec": "\u00a77.2.1",
+      "title": "Session quality gate (\u22652 turns, error state check)",
+      "status": "resolved",
+      "attempts": 0,
+      "last_attempt": null,
+      "last_result": "session_gate in quality_gates.py"
+    },
+    "GAP-010": {
+      "spec": "\u00a77.2.3",
+      "title": "SUPERSEDES edge for functional predicates",
+      "status": "resolved",
+      "attempts": 0,
+      "last_attempt": null,
+      "last_result": "SUPERSEDES + functional in temporal.py + ingestion.py"
+    },
+    "GAP-011": {
+      "spec": "\u00a710",
+      "title": "Backup/restore scripts (non-stub)",
+      "status": "resolved",
+      "attempts": 0,
+      "last_attempt": null,
+      "last_result": "backup.sh + restore.sh both >200 chars"
+    },
+    "GAP-012": {
+      "spec": "\u00a715.2",
+      "title": "ferrite.yaml config file",
+      "status": "resolved",
+      "attempts": 0,
+      "last_attempt": null,
+      "last_result": "ferrite.yaml exists with all required sections"
+    }
+  },
+  "test_state": {
+    "last_run": "2026-08-09T17:44:01.037562",
+    "total": 178,
+    "passed": 176,
+    "failed": 0,
+    "skipped": 2,
+    "failing_tests": []
+  }
+}

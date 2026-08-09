@@ -1,7 +1,22 @@
-"""Ingestion pipeline: queue, extract, canonicalize, write to Neo4j."""
+"""Ingestion pipeline: queue, extract, canonicalize, write to Neo4j.
 
+Architecture (§7.1):
+    Agent → MCP store() → Redis Queue → In-proc Consumer → LLM Extraction
+                             ↓                              ↓
+                        LRU Index                     Canonicalize (A2)
+                        (1000 items)                       ↓
+                        5 min TTL                   Neo4j Write
+                                                        ↓
+                                                Consolidation Queue (A16)
+                                                (single consumer)
+"""
+
+import asyncio
 import json
 import logging
+import threading
+import time
+from collections import OrderedDict
 from datetime import datetime
 from typing import Callable, Optional
 
@@ -11,6 +26,7 @@ from neo4j import GraphDatabase
 from .canonicalize import resolve_entity
 from .extractor import extract, normalize_literal
 from .models import Episode, FactBase
+from .quality_gates import assertion_gate, should_consolidate_fact
 from .temporal import (
     apply_contradiction,
     apply_supersession,
@@ -23,6 +39,97 @@ logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ferrite:ingestion:queue"
 EPISODE_KEY_PREFIX = "ferrite:episode:"
+CONSOLIDATION_QUEUE_KEY = "ferrite:consolidation:queue"
+
+# LRU index for read-your-own-writes consistency (§6.4, A9)
+# {episode_id, raw_content, queued_at} — 1000 items, 5 min TTL
+_LRU_MAXSIZE = 1000
+_LRU_TTL_SECONDS = 300  # 5 minutes
+
+
+class ReadYourOwnWritesLRU:
+    """LRU cache for recently stored episodes (§6.4, A9).
+
+    search() checks this cache and merges hits into results flagged
+    pending_ingestion, so a search immediately after store() finds
+    the just-stored content even before the queue consumer processes it.
+    """
+
+    def __init__(self, maxsize: int = _LRU_MAXSIZE, ttl: int = _LRU_TTL_SECONDS):
+        self._cache: OrderedDict[str, dict] = OrderedDict()
+        self._maxsize = maxsize
+        self._ttl = ttl
+        self._lock = threading.Lock()
+
+    def put(self, episode_id: str, raw_content: str) -> None:
+        """Add an episode to the LRU."""
+        with self._lock:
+            if episode_id in self._cache:
+                self._cache.move_to_end(episode_id)
+            self._cache[episode_id] = {
+                "raw_content": raw_content,
+                "queued_at": time.time(),
+            }
+            # Evict oldest if over capacity
+            while len(self._cache) > self._maxsize:
+                self._cache.popitem(last=False)
+
+    def search(self, query: str) -> list[dict]:
+        """Simple keyword-overlap scoring over LRU content (§6.4).
+
+        Returns hits flagged as pending_ingestion.
+        """
+        results: list[dict] = []
+        query_lower = query.lower()
+        query_terms = set(query_lower.split())
+
+        with self._lock:
+            now = time.time()
+            expired_keys: list[str] = []
+            for ep_id, entry in self._cache.items():
+                # Check TTL
+                if now - entry["queued_at"] > self._ttl:
+                    expired_keys.append(ep_id)
+                    continue
+
+                content = entry["raw_content"].lower()
+                # Simple keyword overlap scoring
+                content_terms = set(content.split())
+                overlap = len(query_terms & content_terms)
+                if overlap > 0:
+                    score = overlap / max(len(query_terms), 1)
+                    results.append(
+                        {
+                            "id": f"pending:{ep_id}",
+                            "statement": entry["raw_content"][:500],
+                            "certainty": 0.0,
+                            "source": "pending_ingestion",
+                            "valid_at": "",
+                            "pending_ingestion": True,
+                            "score": score,
+                        }
+                    )
+
+            # Cleanup expired
+            for key in expired_keys:
+                self._cache.pop(key, None)
+
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results
+
+    def remove(self, episode_id: str) -> None:
+        """Remove an episode from the LRU after it's been ingested."""
+        with self._lock:
+            self._cache.pop(episode_id, None)
+
+
+# Global LRU instance
+_lru_index = ReadYourOwnWritesLRU()
+
+
+def get_lru() -> ReadYourOwnWritesLRU:
+    """Get the global LRU index."""
+    return _lru_index
 
 
 class IngestionPipeline:
@@ -43,12 +150,18 @@ class IngestionPipeline:
         self.llm_client = llm_client
 
     def enqueue(self, episode: Episode) -> str:
-        """Queue an episode for ingestion. Returns the episode_id."""
+        """Queue an episode for ingestion. Returns the episode_id.
+
+        Store is always async through the queue interface (§6.4, A9).
+        LRU index keeps {episode_id, raw_content} for RYOW consistency.
+        """
         episode_data = episode.model_dump_json()
         self.redis_client.hset(
             f"{EPISODE_KEY_PREFIX}{episode.id}", "data", episode_data
         )
         self.redis_client.lpush(QUEUE_KEY, episode.id)
+        # Add to LRU for read-your-own-writes (§6.4)
+        _lru_index.put(episode.id, episode.content)
         logger.info(f"Enqueued episode {episode.id}")
         return episode.id
 
@@ -64,7 +177,37 @@ class IngestionPipeline:
 
         episode_id = episode_id.decode() if isinstance(episode_id, bytes) else episode_id
         self.process_episode(episode_id)
+        # Remove from LRU after ingestion (§6.4)
+        _lru_index.remove(episode_id)
         return episode_id
+
+    async def start_consumer(self, poll_interval: float = 1.0) -> None:
+        """In-proc async queue consumer (§7.1, §6.4).
+
+        Runs inside the API container. Polls Redis queue and processes
+        episodes as they arrive. Single consumer for MVP.
+        """
+        logger.info("Starting in-proc ingestion consumer")
+        while True:
+            try:
+                episode_id = self.redis_client.rpop(QUEUE_KEY)
+                if episode_id is None:
+                    await asyncio.sleep(poll_interval)
+                    continue
+
+                episode_id = (
+                    episode_id.decode()
+                    if isinstance(episode_id, bytes)
+                    else episode_id
+                )
+                self.process_episode(episode_id)
+                _lru_index.remove(episode_id)
+            except asyncio.CancelledError:
+                logger.info("Ingestion consumer cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Consumer error: {e}", exc_info=True)
+                await asyncio.sleep(poll_interval)
 
     def process_episode(self, episode_id: str) -> None:
         """Process a single episode: extract -> canonicalize -> write to Neo4j."""
@@ -115,12 +258,19 @@ class IngestionPipeline:
 
         # Step 3: Write facts to Neo4j with temporal logic
         for fact_data in extraction.get("facts", []):
+            # Assertion gate (§7.2.1): skip facts with invalid assertion_source
+            if not assertion_gate(fact_data):
+                logger.warning(f"Skipping fact that failed assertion gate: {fact_data}")
+                continue
             self._write_fact_with_temporal(episode, fact_data, entity_cache)
 
         # Step 4: Enqueue consolidation groups for newly written facts (A16)
         try:
             from .consolidator import _group_key, enqueue_consolidation
             for fact_data in extraction.get("facts", []):
+                # model-sourced facts excluded from consolidation (§7.2.1)
+                if not should_consolidate_fact(fact_data):
+                    continue
                 subj_name = fact_data["subject"]
                 predicate = fact_data.get("predicate", "other")
                 namespace = episode.namespace or "shared"

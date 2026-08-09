@@ -1,0 +1,45 @@
+# Ferrite Configuration (§15.2)
+# This file is loaded by config.py. Values can be overridden by environment variables.
+
+server:
+  transport: "http"
+  port: 8000
+
+llm:
+  provider: "openai"           # OpenAI-compatible
+  model: "deepseek-v4-flash"  # Self-hosted on Spark 07-08
+  api_base: "http://host.docker.internal:4000/v1"
+  api_key: "${LLM_API_KEY}"   # From env, never in repo
+  # Fallback:
+  # model: "qwen3:8b"
+  # api_base: "http://host.docker.internal:11434/v1"
+
+embedder:
+  provider: "openai"
+  model: "nomic-embed-text-v1.5"  # 768 dims, 8192 token context
+  api_base: "http://host.docker.internal:11434/v1"
+  # Ollama config: keep_alive = -1 (always loaded, ~500MB RAM)
+
+database:
+  provider: "neo4j"
+  uri: "bolt://neo4j:7687"
+  username: "neo4j"
+  password: "ferrite_secure_password"
+
+circuit_breaker:
+  failure_threshold: 5
+  cooldown_seconds: 60
+  half_open_max_calls: 3
+
+eval:                        # A5
+  queries_file: "eval/queries.yaml"
+  recall_k: [5, 10]
+
+rrf:                         # A8
+  k: 60
+  recency_weight: 0.15       # tuned against eval
+
+backup:
+  schedule: "0 2 * * *"
+  retention_days: 30
+  path: "/backups"

@@ -63,9 +63,10 @@ class StoreResponse(BaseModel):
 class SearchResult(BaseModel):
     id: str
     statement: str
-    certainty: float
-    source: str
-    valid_at: str
+    certainty: float = 0.0
+    source: str = ""
+    valid_at: str = ""
+    pending_ingestion: bool = False
 
 
 class SearchResponse(BaseModel):

@@ -12,6 +12,27 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .ingestion import IngestionPipeline
+from .key_store import (
+    create_key as ks_create_key,
+)
+from .key_store import (
+    has_namespace_access as ks_has_namespace,
+)
+from .key_store import (
+    has_scope as ks_has_scope,
+)
+from .key_store import (
+    init_db as ks_init_db,
+)
+from .key_store import (
+    list_keys as ks_list_keys,
+)
+from .key_store import (
+    revoke_key as ks_revoke_key,
+)
+from .key_store import (
+    validate_token as ks_validate_token,
+)
 from .models import (
     HealthResponse,
     SearchResponse,
@@ -24,24 +45,32 @@ from .temporal import get_history_as_of_knowledge, get_history_as_of_world
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Auth config — set FERRITE_API_KEY to enforce bearer token auth.
-# If not set, auth is disabled (development mode).
-# Read dynamically so tests can change it per-test.
-_PUBLIC_ENDPOINTS = {"/", "/health", "/metrics", "/circuit-breaker"}
+# Auth: SQLite key store (§6.1) + env-based admin key for backward compat.
+# Public endpoints: health, metrics, circuit-breaker, root (Web UI).
+_PUBLIC_ENDPOINTS = {
+    "/", "/health", "/metrics", "/circuit-breaker", "/circuit-breaker/reset",
+}
+# Key management endpoints require admin scope.
+_ADMIN_ENDPOINTS = {"/keys", "/keys/{key_id}/revoke"}
 
 
-def _get_api_key() -> str:
-    """Get the current API key from env (dynamic, not cached)."""
-    return os.environ.get("FERRITE_API_KEY", "")
+def _extract_token(request: Request) -> str:
+    """Extract bearer token from Authorization header or X-API-Key."""
+    auth_header = request.headers.get("Authorization", "")
+    x_api_key = request.headers.get("X-API-Key", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    if x_api_key:
+        return x_api_key
+    return ""
 
 
-def _get_admin_keys() -> set[str]:
-    """Get admin key set (dynamic)."""
-    key = _get_api_key()
-    keys = {"admin", "ferrite-admin"}
-    if key:
-        keys.add(key)
-    return keys
+def _validate_request_token(request: Request) -> dict | None:
+    """Validate the token from the request, returns key_info or None."""
+    token = _extract_token(request)
+    if not token:
+        return None
+    return ks_validate_token(token)
 
 # Rate limiting storage (in-memory for MVP; Redis in production)
 _rate_limit_store: dict[str, dict] = {}
@@ -98,31 +127,80 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             logger.warning(f"Could not initialize pipeline: {e}")
             pipeline = None
 
+    # Initialize SQLite key store on startup
+    ks_init_db()
+
+    # Start in-proc async consumer (§7.1)
+    @app.on_event("startup")
+    async def start_ingestion_consumer():
+        if pipeline is not None:
+            import asyncio as _asyncio
+            app.state.consumer_task = _asyncio.create_task(
+                pipeline.start_consumer(poll_interval=1.0)
+            )
+            logger.info("In-proc ingestion consumer started")
+
+    @app.on_event("shutdown")
+    async def stop_ingestion_consumer():
+        task = getattr(app.state, "consumer_task", None)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except Exception:
+                pass
+
     @app.middleware("http")
     async def auth_and_rate_limit_middleware(request: Request, call_next):
         path = request.url.path
 
-        # --- Auth check ---
-        api_key = _get_api_key()
-        if api_key and path not in _PUBLIC_ENDPOINTS:
-            # Check Authorization: Bearer <token>
-            auth_header = request.headers.get("Authorization", "")
-            x_api_key = request.headers.get("X-API-Key", "")
+        # --- Auth check (§6.1: SQLite key store) ---
+        if path not in _PUBLIC_ENDPOINTS:
+            key_info = _validate_request_token(request)
 
-            token = ""
-            if auth_header.startswith("Bearer "):
-                token = auth_header[7:]
-            elif x_api_key:
-                token = x_api_key
+            # No valid token — check if auth is entirely disabled (dev mode)
+            env_key = os.environ.get("FERRITE_API_KEY", "")
+            if not env_key and not os.path.exists(
+                os.environ.get(
+                    "FERRITE_KEYS_DB",
+                    os.path.join(os.path.dirname(__file__), "..", "..", "data", "keys.db"),
+                )
+            ):
+                # Dev mode: no keys configured, auth disabled
+                key_info = {
+                    "agent_name": "dev",
+                    "scopes": ["read", "write", "admin"],
+                    "namespaces": ["shared", "personal"],
+                }
 
-            if token != api_key and token not in _get_admin_keys():
+            if key_info is None:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "Invalid or missing API key"},
                 )
 
-        # --- Rate limiting ---
-        rate_key = request.headers.get("X-API-Key", "")
+            # Admin endpoint check (§6.2)
+            if path.startswith("/keys") and not ks_has_scope(key_info, "admin"):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Admin scope required"},
+                )
+
+            # Namespace enforcement (§6.3): check on write operations
+            if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+                ns_param = request.query_params.get("namespace", "shared")
+                if not ks_has_namespace(key_info, ns_param):
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": f"Namespace '{ns_param}' not allowed for this key"},
+                    )
+
+            # Store key_info in request state for downstream handlers
+            request.state.key_info = key_info
+
+        # --- Rate limiting (§4.1: per-key token bucket) ---
+        token = _extract_token(request)
+        rate_key = token or "anonymous"
         is_write = request.method in ("POST", "PUT", "PATCH", "DELETE")
 
         if not _check_rate_limit(rate_key, is_write):
@@ -132,6 +210,41 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             )
 
         return await call_next(request)
+
+    # --- Key Management API (§6.2) ---
+
+    @app.post("/keys")
+    async def create_api_key(request: Request):
+        """Create a new API key (admin scope required).
+
+        Body: {agent_name, scopes?, namespaces?}
+        Returns: {key_id, token, agent_name, scopes, namespaces}
+        Token is returned ONCE — only the hash is stored.
+        """
+        body = await request.json()
+        agent_name = body.get("agent_name", "")
+        scopes = body.get("scopes", ["read", "write"])
+        namespaces = body.get("namespaces", ["shared"])
+
+        if not agent_name:
+            raise HTTPException(status_code=400, detail="agent_name required")
+
+        return ks_create_key(agent_name, scopes=scopes, namespaces=namespaces)
+
+    @app.get("/keys")
+    async def list_api_keys(active_only: bool = True):
+        """List all API keys with status."""
+        return ks_list_keys(active_only=active_only)
+
+    @app.post("/keys/{key_id}/revoke")
+    async def revoke_api_key(key_id: str):
+        """Revoke an API key by ID."""
+        revoked = ks_revoke_key(key_id)
+        if not revoked:
+            raise HTTPException(status_code=404, detail="Key not found or already revoked")
+        return {"status": "revoked", "key_id": key_id}
+
+    # --- Core endpoints ---
 
     @app.post("/store", response_model=StoreResponse)
     async def store(req: StoreRequest):
@@ -173,8 +286,11 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         query: str = Query(..., min_length=1),
         namespace: Optional[str] = Query(None),
         limit: int = Query(10, le=100),
-    ):
-        """Search facts by BM25 + semantic hybrid on Fact.statement."""
+    ) -> SearchResponse:
+        """Search facts by BM25 + semantic hybrid on Fact.statement.
+
+        Merges LRU pending_ingestion hits for read-your-own-writes (§6.4, A9).
+        """
         if pipeline is None:
             raise HTTPException(status_code=503, detail="Pipeline not available")
 
@@ -199,18 +315,40 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 limit=limit,
             )
 
-            results = [
-                SearchResult(
-                    id=r["id"],
-                    statement=r["statement"],
-                    certainty=r["certainty"],
-                    source=r["source"],
-                    valid_at=str(r["valid_at"]) if r["valid_at"] else "",
+            results = []
+            for r in result:
+                # certainty in Neo4j may be a float score or a string
+                # like "stated"/"inferred" — coerce safely
+                cert_raw = r["certainty"]
+                try:
+                    cert_val = float(cert_raw)
+                except (TypeError, ValueError):
+                    cert_val = 0.0
+                results.append(
+                    SearchResult(
+                        id=r["id"],
+                        statement=r["statement"],
+                        certainty=cert_val,
+                        source=str(r["source"]) if r["source"] else "",
+                        valid_at=str(r["valid_at"]) if r["valid_at"] else "",
+                    )
                 )
-                for r in result
-            ]
 
-        return SearchResponse(results=results)
+        # Merge LRU pending_ingestion hits (§6.4, A9)
+        from .ingestion import get_lru
+        lru_hits = get_lru().search(query)
+        for hit in lru_hits[:limit]:
+            results.append(
+                SearchResult(
+                    id=hit["id"],
+                    statement=hit["statement"],
+                    certainty=0.0,
+                    source="pending_ingestion",
+                    valid_at="",
+                )
+            )
+
+        return SearchResponse(results=results[:limit])
 
     @app.get("/entities/{entity_id}")
     async def get_entity(
