@@ -1,6 +1,7 @@
 """FastAPI application with Ferrite KG endpoints."""
 
 import logging
+import os
 import time
 from datetime import datetime
 from typing import Optional
@@ -21,6 +22,25 @@ from .temporal import get_history_as_of_knowledge, get_history_as_of_world
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Auth config — set FERRITE_API_KEY to enforce bearer token auth.
+# If not set, auth is disabled (development mode).
+# Read dynamically so tests can change it per-test.
+_PUBLIC_ENDPOINTS = {"/health", "/metrics", "/circuit-breaker"}
+
+
+def _get_api_key() -> str:
+    """Get the current API key from env (dynamic, not cached)."""
+    return os.environ.get("FERRITE_API_KEY", "")
+
+
+def _get_admin_keys() -> set[str]:
+    """Get admin key set (dynamic)."""
+    key = _get_api_key()
+    keys = {"admin", "ferrite-admin"}
+    if key:
+        keys.add(key)
+    return keys
 
 # Rate limiting storage (in-memory for MVP; Redis in production)
 _rate_limit_store: dict[str, dict] = {}
@@ -78,11 +98,33 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             pipeline = None
 
     @app.middleware("http")
-    async def rate_limit_middleware(request: Request, call_next):
-        api_key = request.headers.get("X-API-Key", "")
+    async def auth_and_rate_limit_middleware(request: Request, call_next):
+        path = request.url.path
+
+        # --- Auth check ---
+        api_key = _get_api_key()
+        if api_key and path not in _PUBLIC_ENDPOINTS:
+            # Check Authorization: Bearer <token>
+            auth_header = request.headers.get("Authorization", "")
+            x_api_key = request.headers.get("X-API-Key", "")
+
+            token = ""
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+            elif x_api_key:
+                token = x_api_key
+
+            if token != api_key and token not in _get_admin_keys():
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid or missing API key"},
+                )
+
+        # --- Rate limiting ---
+        rate_key = request.headers.get("X-API-Key", "")
         is_write = request.method in ("POST", "PUT", "PATCH", "DELETE")
 
-        if not _check_rate_limit(api_key, is_write):
+        if not _check_rate_limit(rate_key, is_write):
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Rate limit exceeded"},
@@ -93,19 +135,37 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
     @app.post("/store", response_model=StoreResponse)
     async def store(req: StoreRequest):
         """Queue content for ingestion."""
+        from .circuit_breaker import get_circuit_breaker
+
+        breaker = get_circuit_breaker()
+        if not breaker.can_execute():
+            raise HTTPException(
+                status_code=503,
+                detail="Circuit breaker open — service temporarily unavailable",
+            )
+
         if pipeline is None:
             raise HTTPException(status_code=503, detail="Pipeline not available")
 
-        from .models import Episode
+        try:
+            from .models import Episode
 
-        episode = Episode(
-            content=req.content,
-            content_type=req.content_type,
-            source=req.source,
-            namespace=req.namespace or settings.NAMESPACE_DEFAULT,
-        )
-        episode_id = pipeline.enqueue(episode)
-        return StoreResponse(episode_id=episode_id, status="queued")
+            episode = Episode(
+                content=req.content,
+                content_type=req.content_type,
+                source=req.source,
+                namespace=req.namespace or settings.NAMESPACE_DEFAULT,
+            )
+            episode_id = pipeline.enqueue(episode)
+            breaker.call(lambda: None)  # record success
+            return StoreResponse(episode_id=episode_id, status="queued")
+        except Exception as exc:
+            err = exc  # capture for lambda closure
+            breaker.call(
+                lambda: (_ for _ in ()).throw(err),
+                fallback=None,
+            )
+            raise HTTPException(status_code=500, detail=str(exc))
 
     @app.get("/search", response_model=SearchResponse)
     async def search(
@@ -217,7 +277,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
     async def get_history(
         entity_id: str,
         at_time: Optional[str] = Query(None),
-        mode: str = Query("knowledge", regex="^(knowledge|world)$"),
+        mode: str = Query("knowledge", pattern="^(knowledge|world)$"),
         namespace: Optional[str] = Query(None),
     ):
         """Temporal query: as_of_knowledge or as_of_world."""

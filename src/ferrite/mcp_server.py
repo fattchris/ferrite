@@ -40,12 +40,13 @@ import json
 import logging
 import os
 import urllib.request
-from typing import Any
+from typing import Any, Callable
 
 from mcp import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
+from .circuit_breaker import get_circuit_breaker
 from .embeddings import OllamaEmbedder
 from .query import (
     get_entity_facts,
@@ -330,6 +331,45 @@ def _json_response(data: Any) -> list[types.TextContent]:
     return _text(json.dumps(data, indent=2, default=str))
 
 
+def _protected(handler: Callable) -> Callable:
+    """Wrap a handler with the circuit breaker.
+
+    If the circuit is open, returns a fallback response immediately
+    instead of attempting a Neo4j/Ollama call that would hang or fail.
+    """
+    breaker = get_circuit_breaker()
+
+    def wrapper(args: dict) -> list[types.TextContent]:
+        if not breaker.can_execute():
+            logger.warning(
+                "Circuit breaker OPEN — %s returning fallback",
+                handler.__name__,
+            )
+            return _json_response({
+                "error": "circuit_breaker_open",
+                "message": (
+                    "Ferrite service is temporarily unavailable. "
+                    "Falling back to local memory only."
+                ),
+            })
+        try:
+            result = handler(args)
+            # Success — record it
+            breaker.call(lambda: None)  # record success
+            return result
+        except Exception as exc:
+            # Let the breaker record the failure
+            _exc = exc  # capture for lambda closure
+            breaker.call(
+                lambda: (_ for _ in ()).throw(_exc),
+                fallback=None,
+            )
+            logger.exception("Tool %s failed", handler.__name__)
+            return _json_response({"error": str(exc)})
+
+    return wrapper
+
+
 # --- Tool handlers ---
 
 def _handle_search(args: dict) -> list[types.TextContent]:
@@ -456,16 +496,16 @@ def _handle_consolidate(args: dict) -> list[types.TextContent]:
 
 
 TOOL_HANDLERS = {
-    "ferrite_search": _handle_search,
-    "ferrite_query": _handle_query,
-    "ferrite_entity_facts": _handle_entity_facts,
-    "ferrite_multi_hop": _handle_multi_hop,
-    "ferrite_inject": _handle_inject,
-    "ferrite_stats": _handle_stats,
-    "ferrite_ingest": _handle_ingest,
-    "ferrite_tempr_search": _handle_tempr_search,
-    "ferrite_mental_model": _handle_mental_model,
-    "ferrite_consolidate": _handle_consolidate,
+    "ferrite_search": _protected(_handle_search),
+    "ferrite_query": _protected(_handle_query),
+    "ferrite_entity_facts": _protected(_handle_entity_facts),
+    "ferrite_multi_hop": _protected(_handle_multi_hop),
+    "ferrite_inject": _protected(_handle_inject),
+    "ferrite_stats": _protected(_handle_stats),
+    "ferrite_ingest": _protected(_handle_ingest),
+    "ferrite_tempr_search": _protected(_handle_tempr_search),
+    "ferrite_mental_model": _protected(_handle_mental_model),
+    "ferrite_consolidate": _protected(_handle_consolidate),
 }
 
 
