@@ -1,11 +1,12 @@
 #!/usr/bin/env python
+# ruff: noqa: E501
 """E2E test: seed data + exercise every API endpoint against live Docker stack."""
 
 import json
 import sys
 import time
-from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 BASE = "http://localhost:8001"
 API_KEY = "test-secret"
