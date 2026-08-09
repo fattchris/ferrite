@@ -386,7 +386,7 @@ class HermesRequest(BaseModel):
     tools: Optional[list[str]] = None
     extensions: list[str] = Field(default_factory=list)
     cwd: str = "."                  # repo root — where coding agents work
-    max_tokens: int = 16_384         # max output tokens for LLM mode
+    max_tokens: int = 32_768         # max output tokens for LLM mode
     history: list[dict] = Field(default_factory=list)  # conversation history for LLM resume
 
 

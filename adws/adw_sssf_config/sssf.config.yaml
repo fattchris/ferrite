@@ -11,11 +11,11 @@ defaults:
   harness_engineering: []
 
 agents:
-  # Architect — GLM-5.2. Heavy reasoning, plans the architecture.
+  # Architect — GLM-5.2 via LiteLLM direct API. Heavy reasoning, plans the architecture.
   - name: planner
     coding_agent: litellm
     model: litellm/glm-5.2
-    thinking: high
+    thinking: medium
     color: "#60a5fa"
     purpose: "Read the Ferrite spec and produce implementation plans for the builder."
     tools: []

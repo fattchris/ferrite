@@ -35,6 +35,13 @@ in the prompt. Read it carefully and produce a detailed plan.
 4. Include test criteria for each item (what proves it works).
 5. Reference spec line numbers when specifying behavior.
 
+**CRITICAL: Keep the plan CONCISE.** Do NOT include actual code in the plan.
+Describe what each file should contain, its key classes/functions, and
+important constraints. The builder will write the actual code. A plan
+that includes code will exceed the token limit and get truncated.
+
+Keep the plan under 3000 words total. Use bullet points, not paragraphs.
+
 ## Report Format
 
 Return a JSON object with the full plan in the notes_for_next_agent field.
