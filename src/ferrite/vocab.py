@@ -63,6 +63,19 @@ PREDICATE_VOCAB: dict[str, dict] = {
     "has_regression": {"functional": True, "description": "Experiment has regression percentage"},
     "parent_brand_of": {"functional": False, "description": "Brand is parent of another"},
     "has_memory": {"functional": True, "description": "Device has specific memory amount"},
+
+    # --- Memory & preference predicates (for Hermes memory provider) ---
+    "prefers": {"functional": False, "description": "Entity prefers a setting, format, or behavior"},
+    "has_preference": {"functional": False, "description": "Entity has a specific preference"},
+    "has_timezone": {"functional": True, "description": "Entity uses a specific timezone"},
+    "has_profile": {"functional": True, "description": "Person has a specific profile name"},
+    "has_role_at": {"functional": True, "description": "Person has a role at organization"},
+    "builds": {"functional": False, "description": "Entity builds a project or product"},
+    "monitors": {"functional": False, "description": "Entity monitors a system or service"},
+    "hosted_on": {"functional": True, "description": "Service hosted on a specific machine"},
+    "auth_method": {"functional": True, "description": "Entity uses a specific auth method"},
+    "has_constraint": {"functional": False, "description": "Entity has a specific constraint"},
+    "prohibited": {"functional": False, "description": "Action is prohibited in context"},
 }
 
 
