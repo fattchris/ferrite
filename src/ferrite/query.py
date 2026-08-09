@@ -584,6 +584,72 @@ def inject_context(
     driver,
     turn_text: str,
     llm_client: Callable[[str, str], str],
+    embedder=None,
+    token_budget: int = 1500,
+    rrf_score_floor: float = 0.001,
+) -> list[dict]:
+    """Determine if any facts should be injected as context for a user's turn.
+
+    Auto-inject v2 (§4.4, A17):
+    - Uses hybrid search (TEMPR if available, BM25+vector fallback)
+    - 1,500-token budget (config per agent)
+    - RRF score floor — inject nothing rather than weak matches
+    - Silence is a feature; irrelevant injection is worse than none
+
+    Args:
+        driver: Neo4j driver instance.
+        turn_text: The user's text/turn.
+        llm_client: Callable(system_prompt, user_prompt) -> str.
+        embedder: Optional OllamaEmbedder for semantic search.
+        token_budget: Max tokens of context to inject (default 1500).
+        rrf_score_floor: Minimum RRF score to inject (silence floor).
+
+    Returns:
+        List of relevant fact dicts, cut off at score floor and token budget.
+        Returns [] if nothing relevant (silence is a feature).
+    """
+    # Strategy: Use TEMPR or hybrid search, then apply score floor + budget
+    try:
+        from .tempr import tempr_search
+        candidates = tempr_search(
+            driver, turn_text, embedder=embedder, limit=20
+        )
+    except ImportError:
+        # Fallback to hybrid search
+        if embedder is not None:
+            candidates = hybrid_search(
+                driver, turn_text, embedder, limit=20
+            )
+        else:
+            candidates = _bm25_search(driver, turn_text, limit=20)
+
+    if not candidates:
+        # No semantic hits — fall back to keyword/entity extraction
+        return _inject_context_legacy(driver, turn_text, llm_client)
+
+    # Apply RRF score floor — inject nothing rather than weak matches
+    filtered = [c for c in candidates if c.get("score", 0) >= rrf_score_floor]
+    if not filtered:
+        return []
+
+    # Apply token budget (~4 chars per token approximation)
+    results: list[dict] = []
+    total_tokens = 0
+    for fact in filtered:
+        stmt = fact.get("statement", "")
+        fact_tokens = len(stmt) // 4  # rough token estimate
+        if total_tokens + fact_tokens > token_budget:
+            break
+        total_tokens += fact_tokens
+        results.append(fact)
+
+    return results
+
+
+def _inject_context_legacy(
+    driver,
+    turn_text: str,
+    llm_client: Callable[[str, str], str],
 ) -> list[dict]:
     """Determine if any facts should be injected as context for a user's turn.
 

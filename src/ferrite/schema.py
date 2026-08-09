@@ -28,6 +28,15 @@ SCHEMA_DDL: list[str] = [
     # Episode index
     "CREATE INDEX episode_recorded_at_idx IF NOT EXISTS FOR (ep:Episode) ON (ep.recorded_at)",
 
+    # Observation indexes
+    "CREATE INDEX observation_predicate_idx IF NOT EXISTS FOR (o:Observation) ON (o.predicate)",
+    "CREATE INDEX observation_namespace_idx IF NOT EXISTS FOR (o:Observation) ON (o.namespace)",
+    "CREATE INDEX observation_epistemic_idx IF NOT EXISTS "
+    "FOR (o:Observation) ON (o.epistemic_state)",
+
+    # Mental model indexes
+    "CREATE INDEX mental_model_id_idx IF NOT EXISTS FOR (m:mental_model) ON (m.id)",
+
     # Vector index for semantic search (§7.3, §7.4)
     "CREATE VECTOR INDEX fact_embeddings IF NOT EXISTS "
     "FOR (f:Fact) ON (f.embedding) "
