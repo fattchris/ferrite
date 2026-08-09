@@ -514,15 +514,15 @@ TOOL_HANDLERS = {
 server = Server("ferrite")
 
 
-async def _list_tools(request: types.ListToolsRequest) -> types.ListToolsResult:
+async def _list_tools(ctx, params) -> types.ListToolsResult:
     """Handle tools/list requests."""
     return types.ListToolsResult(tools=TOOLS)
 
 
-async def _call_tool(request: types.CallToolRequest) -> types.CallToolResult:
+async def _call_tool(ctx, params) -> types.CallToolResult:
     """Handle tools/call requests."""
-    name = request.params.name
-    arguments = request.params.arguments or {}
+    name = params.name
+    arguments = params.arguments or {}
 
     handler = TOOL_HANDLERS.get(name)
     if handler is None:
@@ -542,8 +542,8 @@ async def _call_tool(request: types.CallToolRequest) -> types.CallToolResult:
         )
 
 
-server.add_request_handler("tools/list", types.ListToolsRequest, _list_tools)
-server.add_request_handler("tools/call", types.CallToolRequest, _call_tool)
+server.add_request_handler("tools/list", types.PaginatedRequestParams, _list_tools)
+server.add_request_handler("tools/call", types.CallToolRequestParams, _call_tool)
 
 
 # --- Helper functions ---
