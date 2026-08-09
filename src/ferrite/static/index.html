@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferrite — Temporal Knowledge Graph</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --accent: #58a6ff;
+            --accent-dim: #1f6feb;
+            --success: #3fb950;
+            --warning: #d29922;
+            --error: #f85149;
+            --radius: 6px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--accent);
+        }
+        .header .badge {
+            background: var(--accent-dim);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+        .header .status {
+            margin-left: auto;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.ok { background: var(--success); }
+        .status-dot.err { background: var(--error); }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        .search-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+        .search-bar input[type="text"] {
+            flex: 1;
+            padding: 10px 14px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-size: 14px;
+            outline: none;
+        }
+        .search-bar input:focus {
+            border-color: var(--accent);
+        }
+        .search-bar select {
+            padding: 10px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-size: 13px;
+        }
+        .search-bar button {
+            padding: 10px 20px;
+            background: var(--accent-dim);
+            border: none;
+            border-radius: var(--radius);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .search-bar button:hover {
+            background: var(--accent);
+        }
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 13px;
+            border-bottom: 2px solid transparent;
+        }
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+        .results {
+            display: grid;
+            gap: 12px;
+        }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+        }
+        .card h3 {
+            font-size: 15px;
+            margin-bottom: 8px;
+            color: var(--accent);
+        }
+        .card .meta {
+            display: flex;
+            gap: 12px;
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+        .card .meta span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .card .statement {
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--text);
+        }
+        .card .predicates {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .predicate {
+            background: rgba(88, 166, 255, 0.1);
+            color: var(--accent);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+        .entity-card {
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .entity-card:hover {
+            border-color: var(--accent);
+        }
+        .entity-detail {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        .entity-detail h4 {
+            font-size: 13px;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .fact-list {
+            display: grid;
+            gap: 8px;
+        }
+        .fact-item {
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .fact-item .certainty {
+            float: right;
+            color: var(--success);
+            font-size: 11px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .stat-card .label {
+            font-size: 12px;
+            color: var(--text-dim);
+            margin-top: 4px;
+        }
+        .tempr-results .strategy {
+            font-size: 11px;
+            color: var(--warning);
+            margin-top: 4px;
+        }
+        .empty {
+            text-align: center;
+            padding: 48px;
+            color: var(--text-dim);
+        }
+        .loading {
+            text-align: center;
+            padding: 24px;
+            color: var(--text-dim);
+        }
+        .api-key-bar {
+            padding: 8px 24px;
+            background: rgba(210, 153, 34, 0.1);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+        .api-key-bar input {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 4px 8px;
+            color: var(--text);
+            font-size: 12px;
+            width: 200px;
+        }
+        .json-view {
+            background: rgba(0,0,0,0.3);
+            border-radius: 4px;
+            padding: 12px;
+            font-family: 'SF Mono', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            color: var(--text-dim);
+        }
+    </style>
+</head>
+<body>
+    <div class="api-key-bar">
+        <span>🔑 API Key:</span>
+        <input type="password" id="apiKey" placeholder="Bearer token" onchange="saveKey()">
+        <span style="color: var(--text-dim)">Required for all queries</span>
+    </div>
+    <div class="header">
+        <h1>🔮 Ferrite</h1>
+        <span class="badge">v0.1.0</span>
+        <div class="status">
+            <span><span class="status-dot" id="neo4jDot"></span> Neo4j</span>
+            <span><span class="status-dot" id="redisDot"></span> Redis</span>
+            <span>Queue: <span id="queueDepth">-</span></span>
+        </div>
+    </div>
+    <div class="container">
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('search')">Search</button>
+            <button class="tab" onclick="switchTab('tempr')">TEMPR</button>
+            <button class="tab" onclick="switchTab('stats')">Stats</button>
+        </div>
+        <div id="tab-search">
+            <div class="search-bar">
+                <input type="text" id="searchInput" placeholder="Search facts..." onkeyup="if(event.key==='Enter')doSearch()">
+                <select id="searchMode">
+                    <option value="bm25">BM25 Fulltext</option>
+                    <option value="hybrid">Hybrid (BM25+Semantic)</option>
+                </select>
+                <button onclick="doSearch()">Search</button>
+            </div>
+            <div id="searchResults" class="results"></div>
+        </div>
+        <div id="tab-tempr" style="display:none">
+            <div class="search-bar">
+                <input type="text" id="temprInput" placeholder="TEMPR multi-strategy query..." onkeyup="if(event.key==='Enter')doTempr()">
+                <button onclick="doTempr()">TEMPR Search</button>
+            </div>
+            <div id="temprResults" class="results"></div>
+        </div>
+        <div id="tab-stats" style="display:none">
+            <div id="statsGrid" class="stats-grid"></div>
+            <div id="entityList" class="results"></div>
+        </div>
+    </div>
+    <script>
+        const API = window.location.origin;
+        let apiKey = localStorage.getItem('ferrite_api_key') || '';
+        document.getElementById('apiKey').value = apiKey;
+
+        function saveKey() {
+            apiKey = document.getElementById('apiKey').value;
+            localStorage.setItem('ferrite_api_key', apiKey);
+        }
+
+        function headers() {
+            return apiKey ? {'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json'} : {'Content-Type': 'application/json'};
+        }
+
+        async function apiGet(path) {
+            const r = await fetch(API + path, {headers: headers()});
+            if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+            return r.json();
+        }
+
+        async function apiPost(path, body) {
+            const r = await fetch(API + path, {
+                method: 'POST',
+                headers: headers(),
+                body: JSON.stringify(body)
+            });
+            if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+            return r.json();
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('tab-search').style.display = tab === 'search' ? '' : 'none';
+            document.getElementById('tab-tempr').style.display = tab === 'tempr' ? '' : 'none';
+            document.getElementById('tab-stats').style.display = tab === 'stats' ? '' : 'none';
+            if (tab === 'stats') loadStats();
+        }
+
+        async function checkHealth() {
+            try {
+                const h = await apiGet('/health');
+                document.getElementById('neo4jDot').className = 'status-dot ' + (h.neo4j === 'ok' ? 'ok' : 'err');
+                document.getElementById('redisDot').className = 'status-dot ' + (h.redis === 'ok' ? 'ok' : 'err');
+                document.getElementById('queueDepth').textContent = h.queue_depth;
+            } catch(e) {
+                document.getElementById('neo4jDot').className = 'status-dot err';
+                document.getElementById('redisDot').className = 'status-dot err';
+            }
+        }
+
+        async function doSearch() {
+            const q = document.getElementById('searchInput').value;
+            if (!q) return;
+            document.getElementById('searchResults').innerHTML = '<div class="loading">Searching...</div>';
+            try {
+                const data = await apiGet('/search?query=' + encodeURIComponent(q));
+                const el = document.getElementById('searchResults');
+                if (data.results.length === 0) {
+                    el.innerHTML = '<div class="empty">No results found</div>';
+                    return;
+                }
+                el.innerHTML = data.results.map(r => `
+                    <div class="card">
+                        <h3>${r.statement}</h3>
+                        <div class="meta">
+                            <span>📊 ${(r.certainty * 100).toFixed(0)}% certainty</span>
+                            <span>📅 ${r.valid_at || 'N/A'}</span>
+                            <span>🔗 ${r.source || 'unknown'}</span>
+                        </div>
+                    </div>
+                `).join('');
+            } catch(e) {
+                document.getElementById('searchResults').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+            }
+        }
+
+        async function doTempr() {
+            const q = document.getElementById('temprInput').value;
+            if (!q) return;
+            document.getElementById('temprResults').innerHTML = '<div class="loading">Running 5 strategies...</div>';
+            try {
+                const data = await apiPost('/tempr', {query: q, limit: 10});
+                const el = document.getElementById('temprResults');
+                if (data.count === 0) {
+                    el.innerHTML = '<div class="empty">No results</div>';
+                    return;
+                }
+                el.innerHTML = data.results.map(r => `
+                    <div class="card tempr-results">
+                        <h3>${r.statement || r.text || JSON.stringify(r).substring(0, 100)}</h3>
+                        <div class="meta">
+                            <span>📊 ${(r.score * 100).toFixed(1)}% match</span>
+                            <span class="strategy">${r.strategies || 'RRF fusion'}</span>
+                        </div>
+                    </div>
+                `).join('');
+            } catch(e) {
+                document.getElementById('temprResults').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const [stats, health] = await Promise.all([
+                    apiGet('/circuit-breaker'),
+                    apiGet('/metrics')
+                ]);
+
+                const h = health.health;
+                const grid = document.getElementById('statsGrid');
+                const statsData = [
+                    {label: 'Overall Health', value: h.overall, ok: h.overall === 'healthy'},
+                    {label: 'Neo4j', value: h.checks?.neo4j?.status || 'N/A', ok: true},
+                    {label: 'Redis', value: h.checks?.redis?.status || 'N/A', ok: true},
+                    {label: 'Queue Depth', value: h.checks?.queue_depth?.detail?.replace('Queue depth: ', '') || 0, ok: true},
+                    {label: 'Breaker State', value: stats.state, ok: stats.state === 'closed'},
+                    {label: 'Failures', value: stats.failure_count, ok: stats.failure_count === 0},
+                ];
+
+                grid.innerHTML = statsData.map(s => `
+                    <div class="stat-card">
+                        <div class="value" style="color: ${s.ok ? 'var(--success)' : 'var(--warning)'}">${s.value}</div>
+                        <div class="label">${s.label}</div>
+                    </div>
+                `).join('');
+
+                // Load entities
+                const entList = document.getElementById('entityList');
+                entList.innerHTML = '<div class="loading">Loading entities...</div>';
+                // We'll use the search endpoint to find some
+                const searchResults = await apiGet('/search?query=*&limit=20');
+                entList.innerHTML = searchResults.results.map(r => `
+                    <div class="card entity-card" onclick="loadEntity('${r.id}')">
+                        <h3>${r.statement}</h3>
+                        <div class="meta">
+                            <span>📊 ${(r.certainty * 100).toFixed(0)}%</span>
+                            <span>🔗 ${r.source || 'N/A'}</span>
+                        </div>
+                    </div>
+                `).join('') || '<div class="empty">No entities found</div>';
+            } catch(e) {
+                document.getElementById('statsGrid').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+            }
+        }
+
+        async function loadEntity(id) {
+            try {
+                const e = await apiGet('/entities/' + id);
+                const el = document.getElementById('entityList');
+                el.innerHTML = `
+                    <div class="card">
+                        <h3>${e.entity.name} (${e.entity.type})</h3>
+                        <p style="color: var(--text-dim); margin: 8px 0">${e.entity.summary || ''}</p>
+                        <div class="entity-detail">
+                            <div>
+                                <h4>Facts (as Subject)</h4>
+                                <div class="fact-list">
+                                    ${e.facts_as_subject.map(f => `
+                                        <div class="fact-item">
+                                            <span class="certainty">${(f.certainty * 100).toFixed(0)}%</span>
+                                            ${f.statement}
+                                        </div>
+                                    `).join('') || '<div class="empty">None</div>'}
+                                </div>
+                            </div>
+                            <div>
+                                <h4>Facts (as Object)</h4>
+                                <div class="fact-list">
+                                    ${e.facts_as_object.map(f => `
+                                        <div class="fact-item">
+                                            <span class="certainty">${(f.certainty * 100).toFixed(0)}%</span>
+                                            ${f.statement}
+                                        </div>
+                                    `).join('') || '<div class="empty">None</div>'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } catch(e) {
+                document.getElementById('entityList').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+            }
+        }
+
+        // Init
+        checkHealth();
+        setInterval(checkHealth, 30000);
+    </script>
+</body>
+</html>

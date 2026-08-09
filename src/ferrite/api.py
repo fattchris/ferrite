@@ -7,7 +7,8 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .ingestion import IngestionPipeline
@@ -26,7 +27,7 @@ settings = get_settings()
 # Auth config — set FERRITE_API_KEY to enforce bearer token auth.
 # If not set, auth is disabled (development mode).
 # Read dynamically so tests can change it per-test.
-_PUBLIC_ENDPOINTS = {"/health", "/metrics", "/circuit-breaker"}
+_PUBLIC_ENDPOINTS = {"/", "/health", "/metrics", "/circuit-breaker"}
 
 
 def _get_api_key() -> str:
@@ -436,6 +437,19 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         from .circuit_breaker import get_circuit_breaker
         get_circuit_breaker().reset()
         return {"status": "reset", "state": "closed"}
+
+    # --- Web UI ---
+    static_dir = os.path.join(os.path.dirname(__file__), "static")
+    if os.path.isdir(static_dir):
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @app.get("/", include_in_schema=False)
+    async def root():
+        """Serve the Web UI."""
+        index = os.path.join(os.path.dirname(__file__), "static", "index.html")
+        if os.path.isfile(index):
+            return FileResponse(index)
+        return JSONResponse({"detail": "Web UI not available"}, status_code=404)
 
     return app
 
