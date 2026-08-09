@@ -249,10 +249,28 @@ def _extract_json(text: str) -> dict:
             if block.startswith("{"):
                 candidate = block
                 break
+    # Try the simple approach first: first { to last }
     start, end = candidate.find("{"), candidate.rfind("}")
     if start == -1 or end <= start:
         raise ValueError("no JSON object found in the response")
-    return json.loads(candidate[start:end + 1])
+    try:
+        return json.loads(candidate[start:end + 1])
+    except json.JSONDecodeError:
+        pass
+    # Fallback: try every { ... } substring from the end backward.
+    # Models often emit multiple JSON objects; the last valid one is
+    # usually the final report.
+    for i in range(candidate.rfind("{"), -1, -1):
+        if candidate[i] != "{":
+            continue
+        for j in range(candidate.rfind("}"), i, -1):
+            if candidate[j] != "}":
+                continue
+            try:
+                return json.loads(candidate[i:j + 1])
+            except json.JSONDecodeError:
+                continue
+    raise ValueError("no JSON object found in the response")
 
 
 def _parse_with_retries(run, phase: Phase, call: AgentCall, result, send):

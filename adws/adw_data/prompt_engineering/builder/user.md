@@ -16,19 +16,16 @@
 
 ## Task
 
-Implement the work described in `prompt`, guided by `previous_envelope` if present, then emit your `Report` JSON.
+Implement the work described in `prompt`, guided by `previous_envelope` if present, then emit your Report JSON.
 
 ## Report
 
-Respond with ONLY valid JSON matching `BuildOutput` — no prose before or after:
+Respond with ONLY a JSON object. No prose before or after. No markdown fences.
 
-```json
-{
-  "status": "success",
-  "summary": "<one sentence describing what you built>",
-  "changed_files": ["src/server.ts"],
-  "artifacts": [],
-  "commit_message": "<imperative one-line git subject for the code you changed — this is what the commit of your work will say>",
-  "notes_for_next_agent": "<how to verify this work>"
-}
-```
+The JSON MUST have exactly this shape:
+
+{"status": "success", "summary": "...", "changed_files": ["..."], "artifacts": [], "commit_message": "...", "notes_for_next_agent": "..."}
+
+CRITICAL: The value of "status" must be EXACTLY the string "success" or the string "fail".
+Do NOT use "completed", "done", "failed", "ok", or any other word.
+Use "success" if you completed the task, "fail" if you could not.

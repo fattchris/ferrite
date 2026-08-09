@@ -30,16 +30,14 @@ Plan the work described in `prompt`.
 
 ## Report
 
-Respond with ONLY valid JSON matching `PlanOutput` — no prose before or after:
+Respond with ONLY a JSON object. No prose before or after. No markdown fences.
 
-```json
-{
-  "status": "success",
-  "summary": "<one sentence describing the plan>",
-  "artifacts": ["<context_handoff_dir>/plan.md", "specs/<adw_id>_<slug>.md"],
-  "commit_message": "<imperative one-line git subject for committing THIS PLAN DOCUMENT, not the work it describes — e.g. 'Add spec for the /health endpoint'>",
-  "notes_for_next_agent": "<what the builder must know>"
-}
-```
+The JSON MUST have exactly this shape:
+
+{"status": "success", "summary": "...", "artifacts": ["<context_handoff_dir>/plan.md", "specs/<adw_id>_<slug>.md"], "commit_message": "...", "notes_for_next_agent": "..."}
+
+CRITICAL: The value of "status" must be EXACTLY the string "success" or the string "fail".
+Do NOT use "completed", "done", "failed", "ok", or any other word.
+Use "success" if you completed the plan, "fail" if you could not.
 
 Both `artifacts` entries are the paths you ACTUALLY wrote, `_v2` suffix and all. Gates open these files — a name you meant to use fails them.

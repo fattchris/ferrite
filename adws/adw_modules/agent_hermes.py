@@ -509,19 +509,22 @@ def _run_omp(request: HermesRequest,
     if not omp_model.startswith("openrouter/") and not omp_model.startswith("litellm/"):
         omp_model = f"openrouter/{omp_model}"
 
+    thinking_level = request.thinking if request.thinking else "off"
+    # Pass system prompt via --system-prompt flag so it overrides omp's
+    # default coding-agent prompt. Without this, omp's built-in prompt
+    # dominates and the agent ignores SSSF's JSON envelope instructions.
+    system_prompt_text = request.system_prompt or ""
     cmd = [
         OMP_PATH,
         "-p",                          # non-interactive print mode
         "--model", omp_model,
-        "--thinking=off",              # SSSF agents don't need thinking blocks
+        f"--thinking={thinking_level}",
+        "--system-prompt", system_prompt_text,
     ]
 
-    # Build the prompt with system prompt prepended (omp -p takes one prompt)
-    full_prompt = ""
-    if request.system_prompt:
-        full_prompt = request.system_prompt + "\n\n---\n\n"
-    full_prompt += request.prompt
-    cmd.append(full_prompt)
+    # Build the prompt — system prompt passed via --system-prompt flag,
+    # so just the user prompt goes as the positional argument.
+    cmd.append(request.prompt)
 
     raw_path = Path(request.raw_output_path)
     raw_path.parent.mkdir(parents=True, exist_ok=True)
