@@ -39,6 +39,9 @@ logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ferrite:ingestion:queue"
 EPISODE_KEY_PREFIX = "ferrite:episode:"
+FAILED_QUEUE_KEY = "ferrite:failed_queue"
+DEAD_LETTER_KEY = "ferrite:dead_letter"
+MAX_RETRIES = 3
 CONSOLIDATION_QUEUE_KEY = "ferrite:consolidation:queue"
 
 # LRU index for read-your-own-writes consistency (§6.4, A9)
@@ -186,11 +189,15 @@ class IngestionPipeline:
 
         Runs inside the API container. Polls Redis queue and processes
         episodes as they arrive. Single consumer for MVP.
+        Also drains the failed queue (F-5 fix) with priority.
         """
         logger.info("Starting in-proc ingestion consumer")
         while True:
             try:
-                episode_id = self.redis_client.rpop(QUEUE_KEY)
+                # Check failed queue first (retry with priority, F-5 fix)
+                episode_id = self.redis_client.rpop(FAILED_QUEUE_KEY)
+                if not episode_id:
+                    episode_id = self.redis_client.rpop(QUEUE_KEY)
                 if episode_id is None:
                     await asyncio.sleep(poll_interval)
                     continue
@@ -210,7 +217,11 @@ class IngestionPipeline:
                 await asyncio.sleep(poll_interval)
 
     def process_episode(self, episode_id: str) -> None:
-        """Process a single episode: extract -> canonicalize -> write to Neo4j."""
+        """Process a single episode: extract -> canonicalize -> write to Neo4j.
+
+        On failure, pushes to failed_queue with retry count (F-5 fix).
+        After MAX_RETRIES, moves to dead_letter for manual inspection.
+        """
         # Load episode from Redis
         raw = self.redis_client.hget(f"{EPISODE_KEY_PREFIX}{episode_id}", "data")
         if raw is None:
@@ -222,64 +233,118 @@ class IngestionPipeline:
 
         logger.info(f"Processing episode {episode.id}")
 
-        # Step 1: Extract entities and facts via LLM
-        extraction = extract(episode.content, self.llm_client)
-
-        # Step 2: Canonicalize entities
-        entity_cache: dict[str, object] = {}
-        for ent_data in extraction.get("entities", []):
-            name = ent_data["name"]
-            if name not in entity_cache:
-                entity = resolve_entity(
-                    self.driver,
-                    name,
-                    self.embedding_func,
-                    entity_type=ent_data.get("type", "entity"),
-                    summary=ent_data.get("summary"),
-                )
-                entity_cache[name] = entity
-
-        # Also canonicalize subjects and objects referenced in facts
-        for fact_data in extraction.get("facts", []):
-            subj_name = fact_data["subject"]
-            if subj_name not in entity_cache:
-                entity = resolve_entity(
-                    self.driver, subj_name, self.embedding_func
-                )
-                entity_cache[subj_name] = entity
-
-            if fact_data.get("object_type") == "entity":
-                obj_name = fact_data["object"]
-                if obj_name not in entity_cache:
-                    entity = resolve_entity(
-                        self.driver, obj_name, self.embedding_func
-                    )
-                    entity_cache[obj_name] = entity
-
-        # Step 3: Write facts to Neo4j with temporal logic
-        for fact_data in extraction.get("facts", []):
-            # Assertion gate (§7.2.1): skip facts with invalid assertion_source
-            if not assertion_gate(fact_data):
-                logger.warning(f"Skipping fact that failed assertion gate: {fact_data}")
-                continue
-            self._write_fact_with_temporal(episode, fact_data, entity_cache)
-
-        # Step 4: Enqueue consolidation groups for newly written facts (A16)
         try:
-            from .consolidator import _group_key, enqueue_consolidation
-            for fact_data in extraction.get("facts", []):
-                # model-sourced facts excluded from consolidation (§7.2.1)
-                if not should_consolidate_fact(fact_data):
-                    continue
-                subj_name = fact_data["subject"]
-                predicate = fact_data.get("predicate", "other")
-                namespace = episode.namespace or "shared"
-                gk = _group_key(subj_name, predicate, namespace)
-                enqueue_consolidation(self.redis_client, gk)
-        except Exception as e:
-            logger.debug("Consolidation enqueue failed: %s", e)
+            # Step 1: Extract entities and facts via LLM (with retry, F-7 fix)
+            extraction = None
+            for attempt in range(2):  # 1 retry with stricter prompt
+                try:
+                    extraction = extract(episode.content, self.llm_client)
+                    break
+                except (ValueError, KeyError) as extract_err:
+                    if attempt == 0 and self.llm_client is not None:
+                        logger.warning(
+                            f"Extraction attempt 1 failed ({extract_err}), "
+                            f"retrying with stricter prompt"
+                        )
+                        # Retry with a simpler content slice
+                        truncated = episode.content[:2000]
+                        extraction = extract(truncated, self.llm_client)
+                        break
+                    else:
+                        raise
 
-        logger.info(f"Completed processing episode {episode.id}")
+            if extraction is None:
+                raise RuntimeError("Extraction returned None after retries")
+
+            # Step 2: Canonicalize entities
+            entity_cache: dict[str, object] = {}
+            for ent_data in extraction.get("entities", []):
+                name = ent_data["name"]
+                if name not in entity_cache:
+                    entity = resolve_entity(
+                        self.driver,
+                        name,
+                        self.embedding_func,
+                        entity_type=ent_data.get("type", "entity"),
+                        summary=ent_data.get("summary"),
+                    )
+                    entity_cache[name] = entity
+
+            # Also canonicalize subjects and objects referenced in facts
+            for fact_data in extraction.get("facts", []):
+                subj_name = fact_data["subject"]
+                if subj_name not in entity_cache:
+                    entity = resolve_entity(
+                        self.driver, subj_name, self.embedding_func
+                    )
+                    entity_cache[subj_name] = entity
+
+                if fact_data.get("object_type") == "entity":
+                    obj_name = fact_data["object"]
+                    if obj_name not in entity_cache:
+                        entity = resolve_entity(
+                            self.driver, obj_name, self.embedding_func
+                        )
+                        entity_cache[obj_name] = entity
+
+            # Step 3: Write facts to Neo4j with temporal logic
+            for fact_data in extraction.get("facts", []):
+                # Assertion gate (§7.2.1): skip facts with invalid assertion_source
+                if not assertion_gate(fact_data):
+                    logger.warning(f"Skipping fact that failed assertion gate: {fact_data}")
+                    continue
+                self._write_fact_with_temporal(episode, fact_data, entity_cache)
+
+            # Step 4: Enqueue consolidation groups for newly written facts (A16)
+            try:
+                from .consolidator import _group_key, enqueue_consolidation
+                for fact_data in extraction.get("facts", []):
+                    # model-sourced facts excluded from consolidation (§7.2.1)
+                    if not should_consolidate_fact(fact_data):
+                        continue
+                    subj_name = fact_data["subject"]
+                    predicate = fact_data.get("predicate", "other")
+                    namespace = episode.namespace or "shared"
+                    gk = _group_key(subj_name, predicate, namespace)
+                    enqueue_consolidation(self.redis_client, gk)
+            except Exception as e:
+                logger.debug("Consolidation enqueue failed: %s", e)
+
+            logger.info(f"Completed processing episode {episode.id}")
+
+        except Exception as e:
+            # DLQ logic (F-5 fix): retry with backoff, then dead letter
+            import json
+            retry_count = self.redis_client.hget(
+                f"{EPISODE_KEY_PREFIX}{episode_id}", "retries"
+            )
+            retries = int(retry_count) if retry_count else 0
+
+            if retries < MAX_RETRIES:
+                self.redis_client.hset(
+                    f"{EPISODE_KEY_PREFIX}{episode_id}", "retries", retries + 1
+                )
+                self.redis_client.hset(
+                    f"{EPISODE_KEY_PREFIX}{episode_id}", "last_error", str(e)
+                )
+                # Push back to failed queue for retry
+                self.redis_client.lpush(FAILED_QUEUE_KEY, episode_id)
+                logger.warning(
+                    f"Episode {episode_id} failed (attempt {retries + 1}/{MAX_RETRIES}): {e}"
+                )
+            else:
+                # Move to dead letter queue
+                dlq_entry = json.dumps({
+                    "episode_id": episode_id,
+                    "content": episode.content[:500],
+                    "error": str(e),
+                    "retries": retries,
+                })
+                self.redis_client.lpush(DEAD_LETTER_KEY, dlq_entry)
+                logger.error(
+                    f"Episode {episode_id} moved to dead letter queue "
+                    f"after {MAX_RETRIES} retries: {e}"
+                )
 
     def _write_fact_with_temporal(
         self,

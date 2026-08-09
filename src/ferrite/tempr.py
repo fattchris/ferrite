@@ -339,6 +339,37 @@ def _rerank_by_epistemic_state(results: list[dict]) -> list[dict]:
     ))
 
 
+def _run_strategy_with_timeout(
+    strategy_fn,
+    strategy_name: str,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> list[dict]:
+    """Run a TEMPR strategy with a timeout (F-3 fix).
+
+    Uses concurrent.futures.ThreadPoolExecutor since TEMPR is sync.
+    Returns [] on timeout or failure.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FuturesTimeoutError
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(strategy_fn)
+            try:
+                result = future.result(timeout=timeout)
+                return result or []
+            except FuturesTimeoutError:
+                logger.warning(
+                    "TEMPR strategy '%s' timed out after %ss — skipping",
+                    strategy_name, timeout,
+                )
+                future.cancel()
+                return []
+    except Exception as e:
+        logger.warning("TEMPR strategy '%s' failed: %s", strategy_name, e)
+        return []
+
+
 def tempr_search(
     driver,
     query_text: str,
@@ -347,11 +378,14 @@ def tempr_search(
     limit: int = 10,
     rrf_k: int = DEFAULT_RRF_K,
     include_history: bool = False,
+    strategy_timeout: float = DEFAULT_TIMEOUT,
 ) -> list[dict]:
     """Full TEMPR multi-strategy retrieval with RRF fusion.
 
-    Runs 5 strategies in parallel (conceptually), fuses via RRF,
-    reranks by epistemic state. Degradation ladder handles missing strategies.
+    Runs 5 strategies in parallel via ThreadPoolExecutor, each with
+    a per-strategy timeout (F-3 fix). Strategies that time out are
+    silently skipped — degradation ladder. Fuses via RRF, reranks
+    by epistemic state.
 
     Args:
         driver: Neo4j driver.
@@ -361,56 +395,72 @@ def tempr_search(
         limit: Max results to return.
         rrf_k: RRF parameter (default 60).
         include_history: If True, include superseded facts.
+        strategy_timeout: Per-strategy timeout in seconds (default 2.0).
 
     Returns:
         Fused and reranked list of fact dicts.
     """
-    ranked_lists: list[list[dict]] = []
+    # Build strategy list (F-8 fix: actually parallel)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    strategies: list[tuple[str, object]] = []
 
-    # Strategy 1: Semantic (vector)
     if embedder is not None:
-        vec_results = vector_search(
-            driver, query_text, embedder, namespace=namespace, limit=limit * 2
-        )
-        if vec_results:
-            ranked_lists.append(vec_results)
+        strategies.append((
+            "semantic",
+            lambda: vector_search(
+                driver, query_text, embedder,
+                namespace=namespace, limit=limit * 2,
+            ),
+        ))
 
-    # Strategy 2: BM25 (keyword)
-    bm25_results = _bm25_search(
-        driver, query_text, namespace=namespace, limit=limit * 2
-    )
-    if bm25_results:
-        ranked_lists.append(bm25_results)
+    strategies.append((
+        "bm25",
+        lambda: _bm25_search(
+            driver, query_text, namespace=namespace, limit=limit * 2,
+        ),
+    ))
 
-    # Strategy 3: Graph traversal
-    try:
-        graph_results = _graph_search(
-            driver, query_text, namespace=namespace, limit=limit * 2
-        )
-        if graph_results:
-            ranked_lists.append(graph_results)
-    except Exception as e:
-        logger.warning("Graph strategy failed: %s", e)
+    strategies.append((
+        "graph",
+        lambda: _graph_search(
+            driver, query_text, namespace=namespace, limit=limit * 2,
+        ),
+    ))
 
-    # Strategy 4: Temporal
-    try:
-        temporal_results = _temporal_search(
-            driver, query_text, namespace=namespace, limit=limit * 2
-        )
-        if temporal_results:
-            ranked_lists.append(temporal_results)
-    except Exception as e:
-        logger.warning("Temporal strategy failed: %s", e)
+    strategies.append((
+        "temporal",
+        lambda: _temporal_search(
+            driver, query_text, namespace=namespace, limit=limit * 2,
+        ),
+    ))
 
-    # Strategy 5: Recency (A8)
-    try:
-        recency_results = _recency_search(
-            driver, query_text, namespace=namespace, limit=limit * 2
-        )
-        if recency_results:
-            ranked_lists.append(recency_results)
-    except Exception as e:
-        logger.warning("Recency strategy failed: %s", e)
+    strategies.append((
+        "recency",
+        lambda: _recency_search(
+            driver, query_text, namespace=namespace, limit=limit * 2,
+        ),
+    ))
+
+    # Run all strategies in parallel with per-strategy timeout (F-3, F-8 fix)
+    ranked_lists: list[list[dict]] = []
+    with ThreadPoolExecutor(
+        max_workers=len(strategies),
+    ) as executor:
+        future_map = {
+            executor.submit(
+                _run_strategy_with_timeout,
+                fn, name, strategy_timeout,
+            ): name
+            for name, fn in strategies
+        }
+        for future in as_completed(future_map):
+            name = future_map[future]
+            try:
+                result = future.result()
+                if result:
+                    ranked_lists.append(result)
+            except Exception as e:
+                logger.warning("TEMPR strategy '%s' failed: %s", name, e)
 
     if not ranked_lists:
         return []

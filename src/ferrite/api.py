@@ -40,6 +40,7 @@ from .models import (
     StoreRequest,
     StoreResponse,
 )
+from .rate_limit import check_rate_limit
 from .temporal import get_history_as_of_knowledge, get_history_as_of_world
 
 logger = logging.getLogger(__name__)
@@ -170,7 +171,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 key_info = {
                     "agent_name": "dev",
                     "scopes": ["read", "write", "admin"],
-                    "namespaces": ["shared", "personal"],
+                    "namespaces": ["shared", "personal", "e2e-test"],
                 }
 
             if key_info is None:
@@ -188,15 +189,55 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
 
             # Namespace enforcement (§6.3): check on write operations
             if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+                # Check namespace from query param AND body (F-1 fix)
                 ns_param = request.query_params.get("namespace", "shared")
                 if not ks_has_namespace(key_info, ns_param):
                     return JSONResponse(
                         status_code=403,
                         content={"detail": f"Namespace '{ns_param}' not allowed for this key"},
                     )
+                # Also check body namespace for POST /store (F-1 fix)
+                if request.headers.get("content-type", "").startswith("application/json"):
+                    try:
+                        import json as _json
+                        body = _json.loads(request._body) if hasattr(request, "_body") else None
+                        if body and "namespace" in body:
+                            body_ns = body["namespace"]
+                            if body_ns != ns_param and not ks_has_namespace(key_info, body_ns):
+                                return JSONResponse(
+                                    status_code=403,
+                                    content={
+                                "detail": (
+                                    f"Namespace '{body_ns}' in body "
+                                    f"not allowed for this key"
+                                )
+                            },
+                                )
+                            # Override query param with body namespace
+                            ns_param = body_ns
+                    except Exception:
+                        pass  # Body parse failure handled by endpoint validation
 
             # Store key_info in request state for downstream handlers
             request.state.key_info = key_info
+
+            # Rate limiting (F-4 fix): per-key sliding window via Redis
+            if key_info and hasattr(pipeline, "redis_client") and pipeline.redis_client:
+                is_write = request.method in ("POST", "PUT", "PATCH", "DELETE")
+                allowed, retry_after = check_rate_limit(
+                    pipeline.redis_client,
+                    key_info.get("key_id", "anonymous"),
+                    is_write=is_write,
+                )
+                if not allowed:
+                    return JSONResponse(
+                        status_code=429,
+                        content={"detail": "Rate limit exceeded"},
+                        headers={
+                            "Retry-After": str(retry_after or 10),
+                            "X-RateLimit-Limit": "20" if is_write else "100",
+                        },
+                    )
 
         # --- Rate limiting (§4.1: per-key token bucket) ---
         token = _extract_token(request)
@@ -247,9 +288,17 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
     # --- Core endpoints ---
 
     @app.post("/store", response_model=StoreResponse)
-    async def store(req: StoreRequest):
+    async def store(request: Request, req: StoreRequest):
         """Queue content for ingestion."""
         from .circuit_breaker import get_circuit_breaker
+
+        # Defense in depth: validate namespace against key (F-1 fix)
+        key_info = getattr(request.state, "key_info", None)
+        if key_info and not ks_has_namespace(key_info, req.namespace):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Namespace '{req.namespace}' not allowed for this key",
+            )
 
         breaker = get_circuit_breaker()
         if not breaker.can_execute():
@@ -283,6 +332,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
 
     @app.get("/search", response_model=SearchResponse)
     async def search(
+        request: Request,
         query: str = Query(..., min_length=1),
         namespace: Optional[str] = Query(None),
         limit: int = Query(10, le=100),
@@ -290,11 +340,32 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         """Search facts by BM25 + semantic hybrid on Fact.statement.
 
         Merges LRU pending_ingestion hits for read-your-own-writes (§6.4, A9).
+        Namespace enforcement (F-2 fix): reads are filtered by key-allowed namespaces.
         """
         if pipeline is None:
             raise HTTPException(status_code=503, detail="Pipeline not available")
 
-        ns_filter = "AND f.namespace = $namespace" if namespace else ""
+        # Namespace enforcement on reads (F-2 fix)
+        key_info = getattr(request.state, "key_info", None)
+        ns_params: dict = {}
+        if key_info:
+            allowed_ns = key_info.get("namespaces", ["shared"])
+            if namespace:
+                if not ks_has_namespace(key_info, namespace):
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Namespace '{namespace}' not allowed for this key",
+                    )
+                ns_filter = "AND f.namespace = $namespace"
+                ns_params["namespace"] = namespace
+            else:
+                # Filter to key-allowed namespaces only (F-2 fix)
+                ns_filter = "AND f.namespace IN $allowed_namespaces"
+                ns_params["allowed_namespaces"] = allowed_ns
+        else:
+            ns_filter = "AND f.namespace = $namespace" if namespace else ""
+            if namespace:
+                ns_params["namespace"] = namespace
 
         with pipeline.driver.session() as session:
             result = session.run(
@@ -312,23 +383,24 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 """,
                 search_query=query,
                 namespace=namespace,
+                **ns_params,
                 limit=limit,
             )
 
             results = []
+            # Certainty mapping (F-6 fix): string label → numeric value
+            CERTAINTY_MAP = {"stated": 1.0, "inferred": 0.7, "speculative": 0.4}
             for r in result:
-                # certainty in Neo4j may be a float score or a string
-                # like "stated"/"inferred" — coerce safely
+                # certainty in Neo4j is a string label, map to numeric (F-6 fix)
                 cert_raw = r["certainty"]
-                try:
-                    cert_val = float(cert_raw)
-                except (TypeError, ValueError):
-                    cert_val = 0.0
+                cert_label = str(cert_raw) if cert_raw else "stated"
+                cert_val = CERTAINTY_MAP.get(cert_label, 0.0)
                 results.append(
                     SearchResult(
                         id=r["id"],
                         statement=r["statement"],
                         certainty=cert_val,
+                        certainty_label=cert_label,
                         source=str(r["source"]) if r["source"] else "",
                         valid_at=str(r["valid_at"]) if r["valid_at"] else "",
                     )

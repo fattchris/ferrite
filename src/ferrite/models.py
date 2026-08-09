@@ -64,6 +64,7 @@ class SearchResult(BaseModel):
     id: str
     statement: str
     certainty: float = 0.0
+    certainty_label: str = "stated"
     source: str = ""
     valid_at: str = ""
     pending_ingestion: bool = False

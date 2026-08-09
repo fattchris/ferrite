@@ -176,7 +176,7 @@ def validate_token(token: str, db_path: Optional[str] = None) -> dict | None:
             "key_id": "env-admin",
             "agent_name": "admin",
             "scopes": ["read", "write", "ingest", "admin"],
-            "namespaces": ["shared", "personal"],
+            "namespaces": ["shared", "personal", "e2e-test"],
         }
 
     path = db_path or _get_db_path()
