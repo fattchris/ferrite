@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FERRITE — Kassett</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--green:#00ff41;--amber:#ffb000;--bg:#000;--white:#c8c8c8;--red:#ff0040}
+html{scroll-behavior:smooth}
+body{font-family:'Share Tech Mono',monospace;background:var(--bg);color:var(--green);overflow-x:hidden;line-height:1.5}
+body::before{content:'';position:fixed;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.3),rgba(0,0,0,.85)),url('../assets-shared/vhs-tape.jpg') center/cover fixed;pointer-events:none;z-index:0}
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,.2) 2px,rgba(0,0,0,.2) 3px);pointer-events:none;z-index:9999;animation:flicker .15s infinite}
+@keyframes flicker{0%,100%{opacity:1}50%{opacity:.97}}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(0,0,0,.95);border-bottom:1px solid var(--green);padding:12px 30px;display:flex;justify-content:space-between;align-items:center}
+nav .logo{font-size:20px;color:var(--green);text-shadow:0 0 10px var(--green)}
+nav ul{display:flex;list-style:none;gap:25px}
+nav a{color:var(--green);text-decoration:none;font-size:13px;transition:color .2s}
+nav a:hover{color:var(--amber);text-shadow:0 0 8px var(--amber)}
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:100px 30px;position:relative;z-index:1}
+.hero .rec{font-size:14px;color:var(--red);margin-bottom:20px;animation:blink 1s step-end infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+.hero h1{font-family:'VT323',monospace;font-size:clamp(50px,10vw,100px);color:var(--green);text-shadow:0 0 20px var(--green),0 0 40px rgba(0,255,65,.3);margin-bottom:15px;line-height:1}
+.hero .tagline{font-size:22px;color:var(--amber);text-shadow:0 0 8px var(--amber);margin-bottom:25px}
+.hero .desc{max-width:600px;font-size:16px;opacity:.7;margin-bottom:35px}
+.cta{display:inline-block;padding:14px 36px;font-family:'Share Tech Mono',monospace;font-size:16px;color:var(--bg);background:var(--green);border:none;text-decoration:none;transition:all .2s;box-shadow:0 0 20px rgba(0,255,65,.3)}
+.cta:hover{background:var(--amber);box-shadow:0 0 30px var(--amber)}
+section{position:relative;z-index:1;padding:80px 30px;max-width:1100px;margin:0 auto}
+.section-header{font-size:18px;color:var(--amber);margin-bottom:30px}
+.section-header .p{color:rgba(0,255,65,.4)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
+.card{background:rgba(0,15,5,.8);border:1px solid rgba(0,255,65,.2);padding:25px;transition:all .3s}
+.card:hover{border-color:var(--green);box-shadow:0 0 15px rgba(0,255,65,.1)}
+.card h3{font-size:14px;color:var(--green);margin-bottom:10px;text-shadow:0 0 5px rgba(0,255,65,.3)}
+.card p{font-size:13px;color:rgba(0,255,65,.6)}
+.card .tag{display:inline-block;font-size:10px;padding:2px 8px;border:1px solid var(--amber);color:var(--amber);margin-top:8px}
+.steps{display:flex;flex-wrap:wrap;gap:15px}
+.step{flex:1;min-width:160px;max-width:200px;border:1px solid rgba(0,255,65,.2);padding:20px;text-align:center}
+.step .n{font-size:28px;color:var(--red);text-shadow:0 0 10px var(--red)}
+.step h4{font-size:14px;color:var(--amber);margin:8px 0}
+.step p{font-size:12px;opacity:.5}
+.tech{display:flex;flex-wrap:wrap;gap:10px}
+.tech div{padding:8px 20px;border:1px solid rgba(0,255,65,.3);font-size:13px;color:var(--green);transition:all .2s}
+.tech div:hover{border-color:var(--green);background:rgba(0,255,65,.05)}
+.deploy{text-align:center;padding:80px 30px}
+.deploy h2{font-size:32px;color:var(--green);text-shadow:0 0 15px var(--green);margin-bottom:20px}
+.code{display:inline-block;margin-top:20px;padding:12px 30px;background:rgba(0,15,5,.8);border:1px solid var(--green);font-size:15px;color:var(--amber)}
+footer{position:relative;z-index:1;text-align:center;padding:30px;border-top:1px solid rgba(0,255,65,.2);font-size:12px;opacity:.4}
+.status{position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,.9);border-top:1px solid rgba(0,255,65,.2);padding:4px 20px;font-size:11px;color:rgba(0,255,65,.4);display:flex;justify-content:space-between;z-index:100}
+@media(max-width:768px){nav ul{display:none}}
+</style>
+</head>
+<body>
+<nav><div class="logo">▶ FERRITE</div><ul><li><a href="#features">[features]</a></li><li><a href="#how">[how]</a></li><li><a href="#stack">[stack]</a></li><li><a href="#deploy">[deploy]</a></li></ul></nav>
+<div class="hero"><div class="rec">● REC</div><h1>FERRITE</h1><div class="tagline">&gt; Persistent Memory for AI Agents</div><p class="desc">A temporal knowledge graph that gives AI agents long-term memory. Agents forget nothing — every conversation, document, and research paper becomes queryable knowledge.</p><a href="#deploy" class="cta">▶ DEPLOY IN 5 MIN</a></div>
+<section id="features"><div class="section-header"><span class="p">root@ferrite:~#</span> cat features.list</div><div class="grid">
+<div class="card"><h3>TEMPORAL GRAPH</h3><p>Every fact timestamped with valid_at/invalid_at. Neo4j deep graph traversal.</p><span class="tag">neo4j</span></div>
+<div class="card"><h3>CONSOLIDATION</h3><p>Raw facts auto-consolidate into evidence-backed beliefs. From Hindsight.</p><span class="tag">hindsight</span></div>
+<div class="card"><h3>TEMPR SEARCH</h3><p>Four parallel: semantic, BM25, graph, temporal. Fused with RRF.</p><span class="tag">rrf</span></div>
+<div class="card"><h3>NAMESPACES</h3><p>Each agent gets isolated namespaces. Policy at query layer.</p><span class="tag">isolated</span></div>
+<div class="card"><h3>SELF-HOSTED LLM</h3><p>DS-V4-Flash on your hardware. Zero API cost. Full sovereignty.</p><span class="tag">zero-cost</span></div>
+<div class="card"><h3>FILE STORAGE</h3><p>PDFs, code, web archives. SHA-256 dedup, chunked embeddings.</p><span class="tag">sha-256</span></div>
+<div class="card"><h3>PLUGGABLE VECTORS</h3><p>Neo4j → Qdrant at scale. Same API, zero code changes.</p><span class="tag">qdrant</span></div>
+<div class="card"><h3>MCP NATIVE</h3><p>Agents connect via Model Context Protocol. store() and search().</p><span class="tag">mcp</span></div>
+<div class="card"><h3>FRESHNESS DECAY</h3><p>Older facts rank lower. Tier 1 full, Tier 3 gets 0.25x.</p><span class="tag">mnemosyne</span></div>
+</div></section>
+<section id="how"><div class="section-header"><span class="p">root@ferrite:~#</span> ./ferrite --trace</div><div class="steps">
+<div class="step"><span class="n">01</span><h4>STORE</h4><p>Agents store conversations and documents via MCP.</p></div>
+<div class="step"><span class="n">02</span><h4>EXTRACT</h4><p>LLM extracts entities, facts. Validated against JSON schema.</p></div>
+<div class="step"><span class="n">03</span><h4>CONSOLIDATE</h4><p>Related facts merge into observations with proof counts.</p></div>
+<div class="step"><span class="n">04</span><h4>RETRIEVE</h4><p>TEMPR fuses 4 search strategies with RRF.</p></div>
+</div></section>
+<section id="stack"><div class="section-header"><span class="p">root@ferrite:~#</span> cat stack.conf</div><div class="tech"><div>Neo4j</div><div>Redis</div><div>FastAPI</div><div>Next.js</div><div>DS-V4-Flash</div><div>nomic-embed-v1.5</div><div>Docker</div></div></section>
+<section id="deploy" class="deploy"><div class="section-header" style="text-align:center"><span class="p">root@ferrite:~#</span> ./deploy.sh</div><h2>READY TO DEPLOY?</h2><p style="opacity:.6;margin-bottom:30px">One command. Zero config.</p><a href="#" class="cta">▶ START</a><div class="code">$ docker compose up</div></section>
+<footer><p>FERRITE :: KASSETT MEMORY SYSTEMS</p></footer>
+<div class="status"><span>● FERRITE v1.0 — ONLINE</span><span>MEM: 3GB/24GB · NEO4J: OK · LLM: OK</span></div>
+</body>
+</html>

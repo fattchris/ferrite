@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ferrite": {
+      "url": "http://localhost:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FERRITE_API_KEY}"
+      },
+      "timeout": 30
+    }
+  }
+}

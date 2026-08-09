@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FERRITE — Kassett</title>
+<link href="https://fonts.googleapis.com/css2?family=Righteous&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--orange:#ff6b1a;--yellow:#ffd60a;--red:#cc3300;--cream:#fff5e6;--bg:#1a0a00;--teal:#0088aa}
+html{scroll-behavior:smooth}
+body{font-family:'Rajdhani',sans-serif;background:var(--bg);color:var(--cream);overflow-x:hidden;line-height:1.6}
+body::before{content:'';position:fixed;inset:0;background:linear-gradient(180deg,rgba(26,10,0,.3),rgba(26,10,0,.85)),url('../assets-shared/boombox.jpg') center/cover fixed;pointer-events:none;z-index:0}
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,.1) 2px,rgba(0,0,0,.1) 3px);pointer-events:none;z-index:9999}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(26,10,0,.95);border-bottom:3px solid var(--orange);padding:14px 40px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 0 20px rgba(255,107,26,.1)}
+nav .logo{font-family:'Righteous',cursive;font-size:26px;letter-spacing:2px;background:linear-gradient(90deg,var(--yellow),var(--orange),var(--red));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+nav ul{display:flex;list-style:none;gap:30px}
+nav a{color:var(--cream);text-decoration:none;font-weight:600;font-size:15px;text-transform:uppercase;letter-spacing:1px;transition:color .3s}
+nav a:hover{color:var(--yellow)}
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:100px 30px;position:relative;z-index:1}
+.hero h1{font-family:'Righteous',cursive;font-size:clamp(55px,13vw,140px);letter-spacing:3px;line-height:.9;margin-bottom:20px;background:linear-gradient(180deg,var(--yellow) 0%,var(--orange) 50%,var(--red) 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 30px rgba(255,107,26,.4))}
+.hero .tagline{font-size:clamp(18px,3vw,26px);color:var(--yellow);text-shadow:0 0 15px rgba(255,214,10,.4);margin-bottom:30px;text-transform:uppercase;letter-spacing:2px}
+.hero .desc{max-width:600px;font-size:17px;opacity:.7;margin-bottom:40px}
+.cta{display:inline-block;padding:16px 50px;font-family:'Righteous',cursive;font-size:18px;letter-spacing:2px;color:var(--bg);background:linear-gradient(90deg,var(--yellow),var(--orange));border:none;text-decoration:none;transition:all .3s;box-shadow:0 0 30px rgba(255,107,26,.3)}
+.cta:hover{box-shadow:0 0 50px var(--orange);transform:translateY(-3px)}
+section{position:relative;z-index:1;padding:90px 40px;max-width:1200px;margin:0 auto}
+.section-title{font-family:'Righteous',cursive;font-size:clamp(36px,6vw,56px);text-align:center;letter-spacing:2px;margin-bottom:50px;background:linear-gradient(90deg,var(--yellow),var(--orange));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:25px}
+.card{background:rgba(30,15,0,.8);backdrop-filter:blur(5px);border:1px solid rgba(255,107,26,.15);padding:30px;transition:all .3s;border-radius:4px}
+.card:hover{border-color:var(--orange);box-shadow:0 0 30px rgba(255,107,26,.1);transform:translateY(-5px)}
+.card h3{font-family:'Righteous',cursive;font-size:18px;color:var(--yellow);margin-bottom:10px}
+.card p{font-size:14px;opacity:.6}
+.card .tag{display:inline-block;font-family:'Righteous',cursive;font-size:12px;padding:3px 10px;border:1px solid var(--orange);color:var(--orange);margin-top:10px}
+.steps{display:flex;flex-wrap:wrap;justify-content:center;gap:20px}
+.step{flex:1;min-width:180px;max-width:230px;text-align:center;padding:25px;border:1px solid rgba(255,107,26,.15);border-radius:4px}
+.step .n{font-family:'Righteous',cursive;font-size:40px;color:var(--orange);display:block;margin-bottom:10px}
+.step h4{font-family:'Righteous',cursive;font-size:16px;color:var(--yellow);margin-bottom:8px}
+.step p{font-size:13px;opacity:.5}
+.tech{display:flex;flex-wrap:wrap;justify-content:center;gap:12px}
+.tech div{padding:10px 24px;border:1px solid var(--yellow);font-family:'Righteous',cursive;font-size:14px;color:var(--yellow);transition:all .2s}
+.tech div:hover{background:rgba(255,214,10,.1)}
+.deploy{text-align:center;padding:100px 40px}
+.deploy h2{font-family:'Righteous',cursive;font-size:clamp(36px,6vw,56px);letter-spacing:2px;margin-bottom:20px;background:linear-gradient(90deg,var(--yellow),var(--orange),var(--red));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.code{display:inline-block;margin-top:25px;padding:15px 35px;background:rgba(0,0,0,.6);border:1px solid var(--orange);font-family:monospace;font-size:16px;color:var(--yellow)}
+footer{position:relative;z-index:1;text-align:center;padding:40px 20px;border-top:1px solid rgba(255,107,26,.2);font-size:14px;opacity:.4}
+@media(max-width:768px){nav ul{display:none}}
+</style>
+</head>
+<body>
+<nav><div class="logo">FERRITE</div><ul><li><a href="#features">Features</a></li><li><a href="#how">How</a></li><li><a href="#stack">Stack</a></li><li><a href="#deploy">Deploy</a></li></ul></nav>
+<div class="hero"><h1>FERRITE</h1><div class="tagline">Persistent Memory for AI Agents</div><p class="desc">A temporal knowledge graph that gives AI agents long-term memory. Agents forget nothing — every conversation, document, and research paper becomes queryable knowledge.</p><a href="#deploy" class="cta">Deploy in 5 Minutes</a></div>
+<section id="features"><h2 class="section-title">FEATURES</h2><div class="grid">
+<div class="card"><h3>TEMPORAL GRAPH</h3><p>Every fact timestamped with valid_at and invalid_at. Track knowledge changes over time. Neo4j deep graph traversal.</p><span class="tag">plays on repeat</span></div>
+<div class="card"><h3>CONSOLIDATION</h3><p>Raw facts auto-consolidate into evidence-backed beliefs. Proof counts, evidence chains, staleness tracking from Hindsight.</p><span class="tag">gold</span></div>
+<div class="card"><h3>TEMPR SEARCH</h3><p>Four parallel strategies: semantic, BM25, graph, temporal. Fused with Reciprocal Rank Fusion. 2s per-strategy timeout.</p><span class="tag">b-side</span></div>
+<div class="card"><h3>NAMESPACES</h3><p>Each agent gets isolated namespaces. Shared where you want, private where you need. Policy at query layer.</p><span class="tag">solo</span></div>
+<div class="card"><h3>SELF-HOSTED LLM</h3><p>DS-V4-Flash on your hardware. Zero API cost. Zero data leaving your network. Full sovereignty.</p><span class="tag">diy</span></div>
+<div class="card"><h3>FILE STORAGE</h3><p>Store PDFs, code, web archives. SHA-256 dedup, chunked embeddings. Re-extractable from canonical source.</p><span class="tag">b-side</span></div>
+<div class="card"><h3>PLUGGABLE VECTORS</h3><p>Start with Neo4j vector index. Swap to Qdrant at scale. Same API, zero code changes. ABC interface.</p><span class="tag">remix</span></div>
+<div class="card"><h3>MCP NATIVE</h3><p>Agents connect via Model Context Protocol. No system prompt hacking. Just store() and search().</p><span class="tag">no label</span></div>
+<div class="card"><h3>FRESHNESS DECAY</h3><p>Older facts rank lower. Tier 1 full weight, Tier 3 gets 0.25x. From Mnemosyne. Never deleted, just faded.</p><span class="tag">fade out</span></div>
+</div></section>
+<section id="how"><h2 class="section-title">HOW IT WORKS</h2><div class="steps">
+<div class="step"><span class="n">01</span><h4>STORE</h4><p>Agents store conversations and documents via MCP.</p></div>
+<div class="step"><span class="n">02</span><h4>EXTRACT</h4><p>LLM extracts entities, facts, relationships. Validated against JSON schema.</p></div>
+<div class="step"><span class="n">03</span><h4>CONSOLIDATE</h4><p>Related facts merge into observations with proof counts.</p></div>
+<div class="step"><span class="n">04</span><h4>RETRIEVE</h4><p>TEMPR fuses 4 search strategies with RRF.</p></div>
+</div></section>
+<section id="stack"><h2 class="section-title">TECH STACK</h2><div class="tech"><div>Neo4j 5.x</div><div>Redis</div><div>FastAPI</div><div>Next.js</div><div>DS-V4-Flash</div><div>nomic-embed-v1.5</div><div>Docker</div></div></section>
+<section id="deploy" class="deploy"><h2>READY TO DEPLOY?</h2><p style="opacity:.7;font-size:18px;margin-bottom:30px">One command. Zero config. Your agents never forget again.</p><a href="#" class="cta">Get Started</a><div class="code">$ docker compose up</div></section>
+<footer><p>FERRITE by KASSETT · Persistent memory for autonomous AI agents · Self-hosted · Open source</p></footer>
+</body>
+</html>

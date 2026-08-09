@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FERRITE — Insert Coin to Remember — Kassett</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --gold: #ffcc00;
+  --orange: #ff6600;
+  --red: #ff0040;
+  --blue: #0066ff;
+  --cyan: #00ccff;
+  --green: #00ff66;
+  --purple: #9900ff;
+  --bg: #000000;
+  --panel: #1a0a00;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'VT323', monospace;
+  background: var(--bg);
+  color: #fff;
+  overflow-x: hidden;
+  line-height: 1.4;
+}
+
+/* Pixel grid background */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image:
+    linear-gradient(rgba(255,204,0,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,204,0,0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Scanlines */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px,
+    transparent 3px,
+    rgba(0,0,0,0.3) 3px,
+    rgba(0,0,0,0.3) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Nav as arcade cabinet header */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  background: rgba(0,0,0,0.95);
+  border-bottom: 3px solid var(--gold);
+  padding: 12px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 0 30px rgba(255,204,0,0.2);
+}
+
+nav .logo {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 16px;
+  color: var(--gold);
+  text-shadow: 2px 2px 0 var(--red), 4px 4px 0 var(--purple);
+  letter-spacing: 1px;
+}
+
+nav .coin {
+  font-size: 14px;
+  color: var(--green);
+  animation: blink 1.5s step-end infinite;
+}
+
+nav ul { display: flex; list-style: none; gap: 20px; }
+
+nav a {
+  font-family: 'Press Start 2P', cursive;
+  color: #fff;
+  text-decoration: none;
+  font-size: 10px;
+  letter-spacing: 1px;
+  transition: all 0.2s;
+}
+
+nav a:hover {
+  color: var(--gold);
+  text-shadow: 0 0 8px var(--gold);
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Hero — arcade attract screen */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 80px 20px;
+  position: relative;
+  z-index: 1;
+}
+
+.hero .insert-coin {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 12px;
+  color: var(--gold);
+  margin-bottom: 30px;
+  animation: blink 1s step-end infinite;
+}
+
+.hero h1 {
+  font-family: 'Press Start 2P', cursive;
+  font-size: clamp(40px, 10vw, 100px);
+  color: var(--gold);
+  text-shadow:
+    3px 3px 0 var(--red),
+    6px 6px 0 var(--orange),
+    9px 9px 0 var(--purple),
+    0 0 40px rgba(255,204,0,0.4);
+  line-height: 1.1;
+  margin-bottom: 15px;
+  letter-spacing: 2px;
+}
+
+.hero .by {
+  font-size: 20px;
+  color: var(--cyan);
+  margin-bottom: 25px;
+  letter-spacing: 2px;
+}
+
+.hero .tagline {
+  font-family: 'Press Start 2P', cursive;
+  font-size: clamp(10px, 2vw, 16px);
+  color: #fff;
+  line-height: 2;
+  margin-bottom: 20px;
+  max-width: 800px;
+}
+
+.hero .high-score {
+  font-size: 18px;
+  color: var(--green);
+  margin: 20px 0;
+}
+
+.hero .high-score .label { color: var(--gold); }
+
+.hero .desc {
+  max-width: 600px;
+  font-size: 18px;
+  color: #aaa;
+  margin-bottom: 40px;
+  line-height: 1.6;
+}
+
+/* Player select buttons */
+.select-buttons {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.player-btn {
+  display: inline-block;
+  padding: 15px 35px;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 12px;
+  color: var(--bg);
+  background: var(--gold);
+  text-decoration: none;
+  border: 3px solid var(--gold);
+  transition: all 0.15s;
+  box-shadow: 4px 4px 0 var(--red);
+}
+
+.player-btn:hover {
+  background: var(--green);
+  border-color: var(--green);
+  box-shadow: 4px 4px 0 var(--blue);
+  transform: translate(-2px, -2px);
+}
+
+.player-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--red);
+}
+
+.player-btn.alt {
+  background: transparent;
+  color: var(--gold);
+  box-shadow: 4px 4px 0 var(--purple);
+}
+
+.player-btn.alt:hover {
+  color: var(--cyan);
+  border-color: var(--cyan);
+  box-shadow: 4px 4px 0 var(--blue);
+}
+
+/* Sections */
+section {
+  position: relative;
+  z-index: 1;
+  padding: 80px 30px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.section-title {
+  font-family: 'Press Start 2P', cursive;
+  font-size: clamp(18px, 3vw, 28px);
+  text-align: center;
+  color: var(--gold);
+  text-shadow: 2px 2px 0 var(--red);
+  margin-bottom: 50px;
+  letter-spacing: 2px;
+}
+
+.section-title::before { content: '▶ '; color: var(--green); }
+.section-title::after { content: ' ◀'; color: var(--green); }
+
+/* Feature cards — arcade style */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.feature-card {
+  background: var(--panel);
+  border: 2px solid var(--gold);
+  padding: 25px;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.feature-card::before {
+  content: '';
+  position: absolute;
+  top: -2px; left: -2px; right: -2px; bottom: -2px;
+  border: 2px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.feature-card:hover {
+  border-color: var(--green);
+  box-shadow: 0 0 20px rgba(0,255,102,0.2);
+  transform: translateY(-3px);
+}
+
+.feature-card .badge {
+  display: inline-block;
+  font-family: 'Press Start 2P', cursive;
+  font-size: 9px;
+  padding: 4px 8px;
+  background: var(--red);
+  color: #fff;
+  margin-bottom: 12px;
+}
+
+.feature-card:nth-child(2n) .badge { background: var(--blue); }
+.feature-card:nth-child(3n) .badge { background: var(--purple); }
+
+.feature-card .icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  display: block;
+}
+
+.feature-card h3 {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 12px;
+  color: var(--gold);
+  margin-bottom: 12px;
+  line-height: 1.5;
+  letter-spacing: 1px;
+}
+
+.feature-card p {
+  font-size: 16px;
+  color: #aaa;
+  line-height: 1.5;
+}
+
+/* How it works — game level select */
+.levels {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 15px;
+}
+
+.level {
+  flex: 1;
+  min-width: 180px;
+  max-width: 220px;
+  background: var(--panel);
+  border: 2px solid var(--blue);
+  padding: 25px 15px;
+  text-align: center;
+  position: relative;
+}
+
+.level .stage {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 24px;
+  color: var(--gold);
+  text-shadow: 2px 2px 0 var(--red);
+  display: block;
+  margin-bottom: 15px;
+}
+
+.level h4 {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 11px;
+  color: var(--cyan);
+  margin-bottom: 10px;
+  letter-spacing: 1px;
+}
+
+.level p {
+  font-size: 14px;
+  color: #888;
+  line-height: 1.5;
+}
+
+.level::after {
+  content: '▶';
+  position: absolute;
+  right: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--gold);
+  font-size: 16px;
+}
+
+.level:last-child::after { display: none; }
+
+/* Tech stack — inventory */
+.inventory {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.item {
+  padding: 10px 20px;
+  border: 2px solid var(--purple);
+  font-size: 16px;
+  color: var(--purple);
+  transition: all 0.2s;
+}
+
+.item:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 0 0 10px rgba(255,204,0,0.3);
+}
+
+/* CTA — game over screen */
+.cta-section {
+  text-align: center;
+  padding: 100px 30px;
+}
+
+.cta-section h2 {
+  font-family: 'Press Start 2P', cursive;
+  font-size: clamp(20px, 4vw, 36px);
+  color: var(--gold);
+  text-shadow: 3px 3px 0 var(--red);
+  margin-bottom: 25px;
+  letter-spacing: 2px;
+}
+
+.cta-section .desc {
+  font-size: 18px;
+  color: #aaa;
+  margin-bottom: 35px;
+}
+
+.code-block {
+  display: inline-block;
+  margin-top: 25px;
+  padding: 15px 30px;
+  background: var(--panel);
+  border: 2px solid var(--green);
+  font-family: 'VT323', monospace;
+  font-size: 20px;
+  color: var(--green);
+  box-shadow: 0 0 20px rgba(0,255,102,0.2);
+}
+
+.code-block .cursor {
+  display: inline-block;
+  width: 10px;
+  height: 18px;
+  background: var(--green);
+  animation: blink 1s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+}
+
+/* Footer */
+footer {
+  position: relative;
+  z-index: 1;
+  border-top: 3px solid var(--gold);
+  padding: 30px;
+  text-align: center;
+  font-size: 16px;
+  color: #666;
+}
+
+footer .brand {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 14px;
+  color: var(--gold);
+  text-shadow: 2px 2px 0 var(--red);
+  margin-bottom: 10px;
+  letter-spacing: 1px;
+}
+
+footer .copyright {
+  font-size: 14px;
+  color: var(--purple);
+}
+
+/* Pixel star decorations */
+.star {
+  position: absolute;
+  color: var(--gold);
+  font-size: 16px;
+  animation: twinkle 2s ease-in-out infinite;
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+@media (max-width: 768px) {
+  nav ul { display: none; }
+  .level::after { display: none; }
+  .hero h1 { font-size: 40px; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">FERRITE</div>
+  <div class="coin">CREDITS: ∞</div>
+  <ul>
+    <li><a href="#features">FEATURES</a></li>
+    <li><a href="#how">HOW</a></li>
+    <li><a href="#stack">STACK</a></li>
+    <li><a href="#deploy">DEPLOY</a></li>
+  </ul>
+</nav>
+
+<section class="hero">
+  <div class="insert-coin">★ INSERT COIN TO REMEMBER ★</div>
+  <h1>FERRITE</h1>
+  <div class="by">═ A KASSETT PRODUCTION ═</div>
+  <div class="tagline">PERSISTENT MEMORY FOR<br>AUTONOMOUS AI AGENTS</div>
+  <div class="high-score"><span class="label">HIGH SCORE:</span> 0 FORGETS · 100% RECALL</div>
+  <p class="desc">A temporal knowledge graph that gives AI agents long-term memory. Agents forget nothing — every conversation, document, and research paper becomes queryable knowledge.</p>
+  <div class="select-buttons">
+    <a href="#deploy" class="player-btn">▶ 1 PLAYER START</a>
+    <a href="#features" class="player-btn alt">2 PLAYER MODE</a>
+  </div>
+</section>
+
+<section id="features">
+  <h2 class="section-title">POWER-UPS</h2>
+  <div class="features-grid">
+    <div class="feature-card">
+      <span class="badge">LVL 1</span>
+      <span class="icon">🔬</span>
+      <h3>TEMPORAL GRAPH</h3>
+      <p>Every fact timestamped with valid_at and invalid_at. Track knowledge changes over time. Built on Neo4j.</p>
+    </div>
+    <div class="feature-card">
+      <span class="badge">LVL 2</span>
+      <span class="icon">🧠</span>
+      <h3>CONSOLIDATION</h3>
+      <p>Raw facts auto-consolidate into evidence-backed beliefs. Proof counts and staleness tracking from Hindsight.</p>
+    </div>
+    <div class="feature-card">
+      <span class="badge">LVL 3</span>
+      <span class="icon">🔍</span>
+      <h3>TEMPR SEARCH</h3>
+      <p>Four parallel strategies: semantic, BM25, graph, temporal. Fused with Reciprocal Rank Fusion. 2s timeout each.</p>
+    </div>
+    <div class="feature-card">
+      <span class="badge">LVL 4</span>
+      <span class="icon">🔐</span>
+      <h3>NAMESPACES</h3>
+      <p>Each agent gets isolated namespaces. Shared where you want, private where you need. Policy at query layer.</p>
+    </div>
+    <div class="feature-card">
+      <span class="badge">LVL 5</span>
+      <span class="icon">⚡</span>
+      <h3>SELF-HOSTED LLM</h3>
+      <p>DS-V4-Flash on your hardware. Zero API cost. Zero data leaving your network. Full sovereignty.</p>
+    </div>
+    <div class="feature-card">
+      <span class="badge">LVL 6</span>
+      <span class="icon">📂</span>
+      <h3>FILE STORAGE</h3>
+      <p>Store PDFs, code, web archives. SHA-256 dedup, chunked embeddings. Re-extractable from canonical source.</p>
+    </div>
+    <div class="feature-card">
+      <span class="badge">LVL 7</span>
+      <span class="icon">🔌</span>
+      <h3>PLUGGABLE VECTORS</h3>
+      <p>Start with Neo4j vector index. Swap to Qdrant at scale. Same API, zero code changes. ABC interface.</p>
+    </div>
+    <div class="feature-card">
+      <span class="badge">LVL 8</span>
+      <span class="icon">📡</span>
+      <h3>MCP NATIVE</h3>
+      <p>Agents connect via Model Context Protocol. No system prompt hacking. Just store() and search().</p>
+    </div>
+    <div class="feature-card">
+      <span class="badge">LVL 9</span>
+      <span class="icon">📉</span>
+      <h3>FRESHNESS DECAY</h3>
+      <p>Older facts rank lower. Tier 1 full weight, Tier 3 gets 0.25x. From Mnemosyne. Never deleted, just faded.</p>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <h2 class="section-title">GAME FLOW</h2>
+  <div class="levels">
+    <div class="level">
+      <span class="stage">STAGE 1</span>
+      <h4>STORE</h4>
+      <p>Agents store conversations and documents via MCP. Transcripts, PDFs, code — all ingested through one API.</p>
+    </div>
+    <div class="level">
+      <span class="stage">STAGE 2</span>
+      <h4>EXTRACT</h4>
+      <p>LLM extracts entities, facts, relationships. Validated against JSON schema before writing to Neo4j.</p>
+    </div>
+    <div class="level">
+      <span class="stage">STAGE 3</span>
+      <h4>CONSOLIDATE</h4>
+      <p>Related facts merge into observations — evidence-backed beliefs with proof counts. Staleness tracking.</p>
+    </div>
+    <div class="level">
+      <span class="stage">STAGE 4</span>
+      <h4>RETRIEVE</h4>
+      <p>TEMPR fuses 4 search strategies with RRF. Mental models first, then observations, then raw facts.</p>
+    </div>
+  </div>
+</section>
+
+<section id="stack">
+  <h2 class="section-title">INVENTORY</h2>
+  <div class="inventory">
+    <div class="item">Neo4j 5.x</div>
+    <div class="item">Redis</div>
+    <div class="item">FastAPI</div>
+    <div class="item">Next.js</div>
+    <div class="item">DS-V4-Flash</div>
+    <div class="item">nomic-embed-v1.5</div>
+    <div class="item">Docker Compose</div>
+  </div>
+</section>
+
+<section id="deploy" class="cta-section">
+  <h2>READY PLAYER ONE?</h2>
+  <p class="desc">One command. Zero config. Your agents never forget again.</p>
+  <a href="#" class="player-btn">▶ PRESS START</a>
+  <div class="code-block">$ docker compose up<span class="cursor"></span></div>
+</section>
+
+<footer>
+  <div class="brand">FERRITE — KASSETT</div>
+  <p class="copyright">© 2026 KASSETT MEMORY SYSTEMS · GAME OVER? NO. MEMORY NEVER ENDS.</p>
+</footer>
+
+</body>
+</html>

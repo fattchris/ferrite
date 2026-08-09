@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FERRITE — Kassett Memory Systems</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Work+Sans:wght@200;300;400;500;600&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --pink: #ff71ce;
+  --blue: #01cdfe;
+  --green: #05ffa1;
+  --purple: #b967ff;
+  --dark: #1a0033;
+  --darker: #0d001a;
+  --cream: #f5f0ff;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Work Sans', sans-serif;
+  background: var(--darker);
+  color: var(--cream);
+  overflow-x: hidden;
+  line-height: 1.7;
+}
+
+/* Floating geometric shapes */
+.geo {
+  position: fixed;
+  border-radius: 50%;
+  opacity: 0.07;
+  z-index: 0;
+  pointer-events: none;
+}
+.geo-1 { width: 400px; height: 400px; background: var(--pink); top: 10%; right: -100px; animation: float 20s ease-in-out infinite; }
+.geo-2 { width: 300px; height: 300px; background: var(--blue); top: 60%; left: -50px; animation: float 15s ease-in-out infinite reverse; }
+.geo-3 { width: 200px; height: 200px; background: var(--purple); top: 120%; right: 20%; animation: float 25s ease-in-out infinite; }
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  33% { transform: translate(30px, -30px) rotate(120deg); }
+  66% { transform: translate(-20px, 20px) rotate(240deg); }
+}
+
+/* Nav */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  background: rgba(13,0,26,0.85);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(185,103,255,0.2);
+  padding: 16px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+nav .logo {
+  font-family: 'Playfair Display', serif;
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  background: linear-gradient(90deg, var(--pink), var(--blue));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+nav ul { display: flex; list-style: none; gap: 35px; }
+
+nav a {
+  color: var(--cream);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: all 0.3s;
+}
+
+nav a:hover { color: var(--pink); }
+
+/* Hero */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 100px 60px 60px;
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(180deg, var(--dark) 0%, var(--darker) 100%);
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 50%;
+  width: 800px; height: 800px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(255,113,206,0.15) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.hero .issue {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--purple);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+}
+
+.hero h1 {
+  font-family: 'Playfair Display', serif;
+  font-weight: 900;
+  font-size: clamp(60px, 12vw, 180px);
+  line-height: 0.9;
+  letter-spacing: -2px;
+  margin-bottom: 25px;
+  background: linear-gradient(135deg, var(--pink) 0%, var(--blue) 50%, var(--green) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero .tagline {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: clamp(20px, 3vw, 32px);
+  font-weight: 400;
+  color: var(--cream);
+  max-width: 700px;
+  margin-bottom: 30px;
+  line-height: 1.4;
+}
+
+.hero .desc {
+  max-width: 650px;
+  font-size: 17px;
+  font-weight: 300;
+  color: rgba(245,240,255,0.7);
+  margin-bottom: 45px;
+}
+
+.hero .desc .drop-cap::first-letter {
+  font-family: 'Playfair Display', serif;
+  font-size: 3.5em;
+  font-weight: 900;
+  float: left;
+  line-height: 0.85;
+  margin: 5px 10px 0 0;
+  background: linear-gradient(135deg, var(--pink), var(--blue));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cta {
+  display: inline-block;
+  padding: 16px 50px;
+  font-family: 'Work Sans', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dark);
+  background: linear-gradient(90deg, var(--pink), var(--blue));
+  text-decoration: none;
+  border: none;
+  border-radius: 2px;
+  transition: all 0.4s;
+  box-shadow: 0 4px 30px rgba(255,113,206,0.3);
+}
+
+.cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 40px rgba(255,113,206,0.5), 0 0 60px rgba(1,205,254,0.2);
+}
+
+/* Sections */
+section {
+  position: relative;
+  z-index: 1;
+  padding: 100px 60px;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+
+.section-label {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--purple);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-bottom: 15px;
+}
+
+.section-title {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(36px, 5vw, 64px);
+  font-weight: 900;
+  line-height: 1;
+  margin-bottom: 50px;
+  color: var(--cream);
+}
+
+.section-title .accent {
+  background: linear-gradient(90deg, var(--pink), var(--blue));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Features editorial grid */
+.features-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border-top: 1px solid rgba(185,103,255,0.15);
+}
+
+.feature-item {
+  padding: 40px;
+  border-bottom: 1px solid rgba(185,103,255,0.15);
+  border-right: 1px solid rgba(185,103,255,0.15);
+  transition: all 0.4s;
+  position: relative;
+}
+
+.feature-item:nth-child(2n) { border-right: none; }
+.feature-item:nth-child(odd) { padding-left: 0; }
+.feature-item:nth-child(2n) { padding-right: 0; }
+
+.feature-item:hover {
+  background: rgba(185,103,255,0.03);
+}
+
+.feature-item .num {
+  font-family: 'Playfair Display', serif;
+  font-size: 14px;
+  font-style: italic;
+  color: var(--purple);
+  margin-bottom: 12px;
+}
+
+.feature-item h3 {
+  font-family: 'Playfair Display', serif;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--cream);
+  margin-bottom: 12px;
+}
+
+.feature-item .pull-quote {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: 16px;
+  color: var(--blue);
+  border-left: 3px solid var(--pink);
+  padding-left: 15px;
+  margin: 15px 0;
+}
+
+.feature-item p {
+  font-size: 15px;
+  font-weight: 300;
+  color: rgba(245,240,255,0.65);
+  line-height: 1.7;
+}
+
+/* How it works */
+.how-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 30px;
+}
+
+.step {
+  text-align: center;
+  position: relative;
+}
+
+.step .circle {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--pink), var(--blue));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  font-family: 'Playfair Display', serif;
+  font-size: 32px;
+  font-weight: 900;
+  color: var(--dark);
+  box-shadow: 0 0 30px rgba(255,113,206,0.3);
+}
+
+.step h4 {
+  font-family: 'Playfair Display', serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--cream);
+  margin-bottom: 10px;
+}
+
+.step p {
+  font-size: 14px;
+  font-weight: 300;
+  color: rgba(245,240,255,0.6);
+}
+
+.step::after {
+  content: '→';
+  position: absolute;
+  right: -20px;
+  top: 30px;
+  color: var(--purple);
+  font-size: 24px;
+}
+
+.step:last-child::after { display: none; }
+
+/* Tech stack */
+.tech-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tech-pill {
+  padding: 10px 24px;
+  border: 1px solid rgba(185,103,255,0.3);
+  border-radius: 30px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--cream);
+  transition: all 0.3s;
+}
+
+.tech-pill:hover {
+  border-color: var(--pink);
+  background: rgba(255,113,206,0.08);
+  box-shadow: 0 0 20px rgba(255,113,206,0.15);
+}
+
+/* CTA */
+.cta-section {
+  text-align: center;
+  padding: 120px 60px;
+  background: linear-gradient(180deg, var(--darker), var(--dark));
+}
+
+.cta-section h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(36px, 6vw, 72px);
+  font-weight: 900;
+  margin-bottom: 25px;
+  background: linear-gradient(90deg, var(--pink), var(--blue), var(--green));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.cta-section .desc {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: 20px;
+  color: rgba(245,240,255,0.6);
+  margin-bottom: 40px;
+}
+
+.code-block {
+  display: inline-block;
+  margin-top: 30px;
+  padding: 15px 35px;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(185,103,255,0.2);
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 15px;
+  color: var(--green);
+}
+
+/* Footer */
+footer {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 50px 30px;
+  border-top: 1px solid rgba(185,103,255,0.15);
+}
+
+footer .brand {
+  font-family: 'Playfair Display', serif;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  background: linear-gradient(90deg, var(--pink), var(--blue));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 10px;
+}
+
+footer p {
+  font-size: 13px;
+  color: rgba(245,240,255,0.4);
+}
+
+@media (max-width: 768px) {
+  nav ul { display: none; }
+  .features-grid { grid-template-columns: 1fr; }
+  .feature-item { border-right: none !important; padding: 30px 0 !important; }
+  .how-grid { grid-template-columns: 1fr 1fr; }
+  .step::after { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="geo geo-1"></div>
+<div class="geo geo-2"></div>
+<div class="geo geo-3"></div>
+
+<nav>
+  <div class="logo">FERRITE</div>
+  <ul>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#how">How It Works</a></li>
+    <li><a href="#stack">Tech Stack</a></li>
+    <li><a href="#deploy">Deploy</a></li>
+  </ul>
+</nav>
+
+<section class="hero">
+  <div class="issue">Vol. 1 · Kassett Memory Systems · MMXXVI</div>
+  <h1>FERRITE</h1>
+  <div class="tagline">Persistent memory for autonomous AI agents — because the mind that forgets is not truly autonomous.</div>
+  <p class="desc"><span class="drop-cap">A</span> temporal knowledge graph that gives AI agents long-term memory. Agents forget nothing — every conversation, document, and research paper becomes queryable knowledge. Self-hosted. Zero API cost. Full data sovereignty.</p>
+  <a href="#deploy" class="cta">Deploy in 5 Minutes</a>
+</section>
+
+<section id="features">
+  <div class="section-label">The Catalog</div>
+  <h2 class="section-title">Nine <span class="accent">capabilities</span> that make memory permanent.</h2>
+  <div class="features-grid">
+    <div class="feature-item">
+      <div class="num">No. 01</div>
+      <h3>Temporal Knowledge Graph</h3>
+      <div class="pull-quote">Every fact knows when it was born and when it died.</div>
+      <p>Every fact is timestamped with valid_at and invalid_at. Track how knowledge changes over time. Built on Neo4j for deep graph traversal.</p>
+    </div>
+    <div class="feature-item">
+      <div class="num">No. 02</div>
+      <h3>Observation Consolidation</h3>
+      <div class="pull-quote">Facts become beliefs. Beliefs carry evidence.</div>
+      <p>Raw facts auto-consolidate into evidence-backed beliefs. Proof counts, evidence chains, and staleness tracking adopted from Hindsight research.</p>
+    </div>
+    <div class="feature-item">
+      <div class="num">No. 03</div>
+      <h3>TEMPR Multi-Strategy Retrieval</h3>
+      <div class="pull-quote">Four searches, one answer. RRF decides what matters.</div>
+      <p>Four parallel search strategies: semantic, BM25, graph traversal, and temporal. Fused with Reciprocal Rank Fusion for best-in-class recall.</p>
+    </div>
+    <div class="feature-item">
+      <div class="num">No. 04</div>
+      <h3>Multi-Agent Namespaces</h3>
+      <div class="pull-quote">Shared knowledge where you want it. Private where you need it.</div>
+      <p>Each agent gets isolated namespaces. Policy enforced at the query layer. No direct Neo4j access — all reads go through the API.</p>
+    </div>
+    <div class="feature-item">
+      <div class="num">No. 05</div>
+      <h3>Self-Hosted LLM Extraction</h3>
+      <div class="pull-quote">Zero API cost. Zero data leaving your network.</div>
+      <p>DS-V4-Flash runs on your hardware. Full sovereignty over the extraction pipeline. Fallback to Qwen3-8B via Ollama if unavailable.</p>
+    </div>
+    <div class="feature-item">
+      <div class="num">No. 06</div>
+      <h3>File Storage & Artifacts</h3>
+      <div class="pull-quote">The PDF is the canonical source. The graph is the index.</div>
+      <p>Store actual files — PDFs, code, web archives, voice transcripts. SHA-256 dedup, chunked embeddings, re-extractable from canonical source.</p>
+    </div>
+    <div class="feature-item">
+      <div class="num">No. 07</div>
+      <h3>Pluggable Vector Store</h3>
+      <div class="pull-quote">Start with Neo4j. Swap to Qdrant. Same API.</div>
+      <p>Start with Neo4j's built-in vector index. Swap to Qdrant when you hit scale. The VectorStore is an ABC — zero code changes on migration.</p>
+    </div>
+    <div class="feature-item">
+      <div class="num">No. 08</div>
+      <h3>MCP Native Protocol</h3>
+      <div class="pull-quote">No system prompt hacking. No fine-tuning. Just tools.</div>
+      <p>Agents connect via Model Context Protocol. store() and search() — that's it. Works with Hermes, OpenClaw, Claude Code, and any MCP client.</p>
+    </div>
+    <div class="feature-item" style="grid-column: 1 / -1; padding: 40px 0 !important; border-right: none;">
+      <div class="num">No. 09</div>
+      <h3>Tier Freshness Decay</h3>
+      <div class="pull-quote">Memory fades. But it never disappears.</div>
+      <p>Older facts naturally rank lower in retrieval. Tier 1 (fresh, &lt;30 days) gets full weight. Tier 2 (30-180 days) gets 0.5x. Tier 3 (6+ months) gets 0.25x and compressed summaries. Old facts are still findable — just ranked lower. Adopted from Mnemosyne's degradation ladder.</p>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="section-label">The Pipeline</div>
+  <h2 class="section-title">From <span class="accent">conversation</span> to knowledge.</h2>
+  <div class="how-grid">
+    <div class="step">
+      <div class="circle">1</div>
+      <h4>Store</h4>
+      <p>Agents store conversations and documents via MCP. Session transcripts, PDFs, code — all ingested through a single API.</p>
+    </div>
+    <div class="step">
+      <div class="circle">2</div>
+      <h4>Extract</h4>
+      <p>LLM extracts entities, facts, and relationships. Validated against JSON schema before writing to Neo4j. No hallucinated nodes.</p>
+    </div>
+    <div class="step">
+      <div class="circle">3</div>
+      <h4>Consolidate</h4>
+      <p>Related facts merge into observations — evidence-backed beliefs with proof counts. Staleness tracking flags outdated beliefs.</p>
+    </div>
+    <div class="step">
+      <div class="circle">4</div>
+      <h4>Retrieve</h4>
+      <p>TEMPR fuses 4 search strategies with RRF. Mental models first, then observations, then raw facts. Tier decay weights by freshness.</p>
+    </div>
+  </div>
+</section>
+
+<section id="stack">
+  <div class="section-label">The Stack</div>
+  <h2 class="section-title">Built on <span class="accent">open</span> infrastructure.</h2>
+  <div class="tech-row">
+    <div class="tech-pill">Neo4j 5.x</div>
+    <div class="tech-pill">Redis</div>
+    <div class="tech-pill">FastAPI</div>
+    <div class="tech-pill">Next.js</div>
+    <div class="tech-pill">DS-V4-Flash</div>
+    <div class="tech-pill">nomic-embed-v1.5</div>
+    <div class="tech-pill">Docker Compose</div>
+  </div>
+</section>
+
+<section id="deploy" class="cta-section">
+  <div class="section-label">Begin</div>
+  <h2>Ready to Deploy?</h2>
+  <p class="desc">One command. Zero config. Your agents never forget again.</p>
+  <a href="#" class="cta">Get Started</a>
+  <div class="code-block">$ docker compose up</div>
+</section>
+
+<footer>
+  <div class="brand">FERRITE</div>
+  <p>Persistent memory for autonomous AI agents · Self-hosted · Open source · A Kassett product</p>
+</footer>
+
+</body>
+</html>

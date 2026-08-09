@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FERRITE — Kassett Memory Systems</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Oswald:wght@300;400;500;600;700&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --ink: #1a1a1a;
+  --paper: #f4f1e8;
+  --paper-dark: #e8e3d3;
+  --red: #d32f2f;
+  --red-dark: #b71c1c;
+  --teal: #00838f;
+  --teal-dark: #006064;
+  --mustard: #f9a825;
+  --purple: #6a1b9a;
+  --green: #2e7d32;
+  --blue: #1565c0;
+  --orange: #e65100;
+  --newsprint: #faf6ed;
+  --halftone: rgba(0,0,0,0.08);
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Oswald', sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  overflow-x: hidden;
+  line-height: 1.5;
+  position: relative;
+}
+
+/* Halftone dot overlay */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image: radial-gradient(circle, var(--halftone) 1px, transparent 1px);
+  background-size: 4px 4px;
+  pointer-events: none;
+  z-index: 9990;
+  mix-blend-mode: multiply;
+}
+
+/* Paper texture */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 28px, rgba(0,0,0,0.015) 28px, rgba(0,0,0,0.015) 29px),
+    repeating-linear-gradient(90deg, transparent, transparent 28px, rgba(0,0,0,0.015) 28px, rgba(0,0,0,0.015) 29px);
+  pointer-events: none;
+  z-index: 9991;
+}
+
+/* Nav — torn paper strip */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  background: var(--ink);
+  padding: 14px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), 97% 100%, 94% calc(100% - 4px), 91% 100%, 88% calc(100% - 6px), 85% 100%, 82% calc(100% - 3px), 79% 100%, 76% calc(100% - 5px), 73% 100%, 70% calc(100% - 4px), 67% 100%, 64% calc(100% - 6px), 61% 100%, 58% calc(100% - 3px), 55% 100%, 52% calc(100% - 5px), 49% 100%, 46% calc(100% - 4px), 43% 100%, 40% calc(100% - 6px), 37% 100%, 34% calc(100% - 3px), 31% 100%, 28% calc(100% - 5px), 25% 100%, 22% calc(100% - 4px), 19% 100%, 16% calc(100% - 6px), 13% 100%, 10% calc(100% - 3px), 7% 100%, 4% calc(100% - 5px), 0 100%);
+}
+
+nav .logo {
+  font-family: 'Bangers', cursive;
+  font-size: 28px;
+  letter-spacing: 3px;
+  color: var(--mustard);
+  text-shadow: 2px 2px 0 var(--red);
+}
+
+nav .tape-icon {
+  display: inline-block;
+  width: 28px; height: 20px;
+  background: var(--mustard);
+  border: 2px solid var(--paper);
+  border-radius: 2px;
+  position: relative;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+nav .tape-icon::before,
+nav .tape-icon::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  width: 8px; height: 8px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper);
+}
+nav .tape-icon::before { left: 3px; }
+nav .tape-icon::after { right: 3px; }
+
+nav ul { display: flex; list-style: none; gap: 25px; }
+
+nav a {
+  font-family: 'Oswald', sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--paper);
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  transition: all 0.2s;
+}
+
+nav a:hover { color: var(--mustard); }
+
+/* Hero — comic book splash page */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 100px 30px 60px;
+  position: relative;
+  z-index: 1;
+  background: var(--paper);
+}
+
+/* Comic burst behind title */
+.burst {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 700px;
+  height: 700px;
+  background: var(--mustard);
+  clip-path: polygon(
+    50% 0%, 55% 15%, 65% 5%, 65% 20%, 80% 12%, 75% 25%, 90% 22%,
+    82% 35%, 100% 35%, 88% 45%, 100% 55%, 85% 55%, 95% 70%, 80% 65%,
+    85% 82%, 70% 72%, 72% 90%, 58% 78%, 50% 100%, 42% 78%, 28% 90%,
+    30% 72%, 15% 82%, 20% 65%, 5% 70%, 15% 55%, 0% 55%, 12% 45%,
+    0% 35%, 18% 35%, 10% 22%, 25% 25%, 20% 12%, 35% 20%, 35% 5%, 45% 15%
+  );
+  z-index: 0;
+  opacity: 0.9;
+  animation: burst-rotate 30s linear infinite;
+}
+
+@keyframes burst-rotate {
+  0% { transform: translateX(-50%) rotate(0deg); }
+  100% { transform: translateX(-50%) rotate(360deg); }
+}
+
+.hero h1 {
+  font-family: 'Bangers', cursive;
+  font-size: clamp(60px, 14vw, 160px);
+  letter-spacing: 6px;
+  line-height: 0.9;
+  position: relative;
+  z-index: 2;
+  color: var(--ink);
+  text-shadow:
+    3px 3px 0 var(--red),
+    6px 6px 0 var(--teal),
+    -2px -2px 0 var(--paper);
+  transform: rotate(-2deg);
+}
+
+.hero .by {
+  font-family: 'Permanent Marker', cursive;
+  font-size: 22px;
+  color: var(--red);
+  position: relative;
+  z-index: 2;
+  margin: 15px 0 10px;
+  transform: rotate(1deg);
+}
+
+.hero .tagline {
+  font-family: 'Bangers', cursive;
+  font-size: clamp(22px, 4vw, 38px);
+  color: var(--ink);
+  letter-spacing: 3px;
+  position: relative;
+  z-index: 2;
+  margin-bottom: 25px;
+  background: var(--mustard);
+  padding: 8px 30px;
+  display: inline-block;
+  transform: rotate(-1deg);
+  border: 3px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--red);
+}
+
+.hero .desc {
+  max-width: 620px;
+  font-size: 18px;
+  font-weight: 300;
+  color: var(--ink);
+  position: relative;
+  z-index: 2;
+  margin-bottom: 40px;
+  line-height: 1.7;
+  background: var(--paper);
+  padding: 20px;
+  border: 3px solid var(--ink);
+  border-radius: 4px;
+  box-shadow: 6px 6px 0 var(--teal);
+  transform: rotate(0.5deg);
+}
+
+/* Cassette tape CSS art */
+.cassette {
+  position: relative;
+  z-index: 2;
+  width: 220px;
+  height: 140px;
+  margin: 0 auto 35px;
+  background: var(--ink);
+  border: 3px solid var(--ink);
+  border-radius: 6px;
+  box-shadow: 5px 5px 0 var(--red), -3px -3px 0 var(--teal);
+}
+
+.cassette .label {
+  background: var(--mustard);
+  height: 50px;
+  margin: 8px 8px 0;
+  border: 2px solid var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Permanent Marker', cursive;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.cassette .reels {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.cassette .reel {
+  width: 35px; height: 35px;
+  border: 3px solid var(--paper);
+  border-radius: 50%;
+  position: relative;
+  animation: spin 4s linear infinite;
+}
+
+.cassette .reel::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px; height: 10px;
+  background: var(--paper);
+  border-radius: 50%;
+}
+
+.cassette .reel::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 50%;
+  transform: translateX(-50%);
+  width: 4px; height: 8px;
+  background: var(--paper);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.cassette .window {
+  width: 140px;
+  height: 45px;
+  background: var(--paper-dark);
+  margin: 0 auto;
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.cassette .tape-strip {
+  width: 100%; height: 4px;
+  background: var(--ink);
+  margin-top: 20px;
+  position: relative;
+}
+
+/* CTA */
+.cta {
+  display: inline-block;
+  padding: 16px 45px;
+  font-family: 'Bangers', cursive;
+  font-size: 24px;
+  letter-spacing: 3px;
+  color: var(--paper);
+  background: var(--red);
+  text-decoration: none;
+  border: 3px solid var(--ink);
+  position: relative;
+  z-index: 2;
+  transition: all 0.15s;
+  box-shadow: 5px 5px 0 var(--ink);
+  transform: rotate(-2deg);
+}
+
+.cta:hover {
+  background: var(--teal);
+  transform: rotate(-2deg) translate(-2px, -2px);
+  box-shadow: 7px 7px 0 var(--ink);
+}
+
+.cta:active {
+  transform: rotate(-2deg) translate(3px, 3px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.cta::before { content: '▶ '; font-size: 18px; }
+
+/* Sections */
+section {
+  position: relative;
+  z-index: 1;
+  padding: 80px 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.section-title {
+  font-family: 'Bangers', cursive;
+  font-size: clamp(40px, 7vw, 80px);
+  text-align: center;
+  letter-spacing: 4px;
+  margin-bottom: 15px;
+  position: relative;
+}
+
+.section-title .red { color: var(--red); }
+.section-title .teal { color: var(--teal); }
+
+.section-sub {
+  font-family: 'Permanent Marker', cursive;
+  font-size: 18px;
+  text-align: center;
+  color: var(--ink);
+  opacity: 0.6;
+  margin-bottom: 50px;
+  transform: rotate(-1deg);
+}
+
+/* Comic panel border */
+.comic-border {
+  border: 4px solid var(--ink);
+  border-radius: 4px;
+  box-shadow: 6px 6px 0 var(--ink);
+  position: relative;
+}
+
+.comic-border.red-shadow { box-shadow: 6px 6px 0 var(--red); }
+.comic-border.teal-shadow { box-shadow: 6px 6px 0 var(--teal); }
+.comic-border.mustard-shadow { box-shadow: 6px 6px 0 var(--mustard); }
+.comic-border.purple-shadow { box-shadow: 6px 6px 0 var(--purple); }
+
+/* Features — comic panels */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 25px;
+}
+
+.feature-panel {
+  background: var(--newsprint);
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+  transition: transform 0.2s;
+}
+
+.feature-panel:nth-child(1) { transform: rotate(-0.8deg); }
+.feature-panel:nth-child(2) { transform: rotate(0.5deg); }
+.feature-panel:nth-child(3) { transform: rotate(-0.3deg); }
+.feature-panel:nth-child(4) { transform: rotate(0.7deg); }
+.feature-panel:nth-child(5) { transform: rotate(-0.5deg); }
+.feature-panel:nth-child(6) { transform: rotate(0.3deg); }
+.feature-panel:nth-child(7) { transform: rotate(-0.6deg); }
+.feature-panel:nth-child(8) { transform: rotate(0.4deg); }
+.feature-panel:nth-child(9) { transform: rotate(-0.2deg); }
+
+.feature-panel:hover { transform: rotate(0deg) scale(1.03); }
+
+.feature-panel .panel-header {
+  padding: 12px 20px;
+  font-family: 'Bangers', cursive;
+  font-size: 18px;
+  letter-spacing: 2px;
+  color: var(--paper);
+}
+
+.feature-panel:nth-child(3n+1) .panel-header { background: var(--red); }
+.feature-panel:nth-child(3n+2) .panel-header { background: var(--teal); }
+.feature-panel:nth-child(3n) .panel-header { background: var(--purple); }
+
+.feature-panel .panel-body {
+  padding: 25px 20px;
+}
+
+.feature-panel .issue-num {
+  font-family: 'Courier Prime', monospace;
+  font-size: 11px;
+  color: var(--ink);
+  opacity: 0.4;
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.feature-panel h3 {
+  font-family: 'Bangers', cursive;
+  font-size: 26px;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  color: var(--ink);
+}
+
+.feature-panel p {
+  font-size: 15px;
+  font-weight: 300;
+  color: var(--ink);
+  line-height: 1.6;
+}
+
+.feature-panel .stamp {
+  display: inline-block;
+  font-family: 'Bangers', cursive;
+  font-size: 14px;
+  padding: 4px 12px;
+  border: 2px solid var(--ink);
+  color: var(--ink);
+  margin-top: 12px;
+  transform: rotate(-3deg);
+  letter-spacing: 1px;
+}
+
+.feature-panel:nth-child(3n+1) .stamp { background: var(--mustard); }
+.feature-panel:nth-child(3n+2) .stamp { background: var(--green); color: var(--paper); border-color: var(--ink); }
+.feature-panel:nth-child(3n) .stamp { background: var(--orange); color: var(--paper); border-color: var(--ink); }
+
+/* How it works — comic strip layout */
+.strip-container {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  border: 4px solid var(--ink);
+  background: var(--ink);
+}
+
+.strip-panel {
+  background: var(--newsprint);
+  padding: 30px 20px;
+  text-align: center;
+  border-right: 4px solid var(--ink);
+  position: relative;
+}
+
+.strip-panel:last-child { border-right: none; }
+
+.strip-panel .num-burst {
+  width: 50px; height: 50px;
+  background: var(--red);
+  color: var(--paper);
+  font-family: 'Bangers', cursive;
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 15px;
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  transform: rotate(-5deg);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.strip-panel:nth-child(2) .num-burst { background: var(--teal); }
+.strip-panel:nth-child(3) .num-burst { background: var(--purple); }
+.strip-panel:nth-child(4) .num-burst { background: var(--green); }
+
+.strip-panel h4 {
+  font-family: 'Bangers', cursive;
+  font-size: 22px;
+  letter-spacing: 1px;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+
+.strip-panel p {
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.strip-panel .arrow-right {
+  position: absolute;
+  right: -16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Bangers', cursive;
+  font-size: 32px;
+  color: var(--mustard);
+  z-index: 5;
+  text-shadow: 2px 2px 0 var(--ink);
+}
+
+.strip-panel:last-child .arrow-right { display: none; }
+
+/* Tech stack — sticker collection */
+.stickers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 15px;
+}
+
+.sticker {
+  padding: 12px 24px;
+  font-family: 'Bangers', cursive;
+  font-size: 18px;
+  letter-spacing: 1px;
+  border: 3px solid var(--ink);
+  border-radius: 4px;
+  transition: all 0.2s;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.sticker:nth-child(1) { background: var(--red); color: var(--paper); transform: rotate(-3deg); }
+.sticker:nth-child(2) { background: var(--teal); color: var(--paper); transform: rotate(2deg); }
+.sticker:nth-child(3) { background: var(--mustard); color: var(--ink); transform: rotate(-1deg); }
+.sticker:nth-child(4) { background: var(--purple); color: var(--paper); transform: rotate(3deg); }
+.sticker:nth-child(5) { background: var(--green); color: var(--paper); transform: rotate(-2deg); }
+.sticker:nth-child(6) { background: var(--orange); color: var(--paper); transform: rotate(1deg); }
+.sticker:nth-child(7) { background: var(--blue); color: var(--paper); transform: rotate(-3deg); }
+
+.sticker:hover {
+  transform: rotate(0deg) scale(1.1);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+/* CTA section — back cover ad */
+.cta-section {
+  text-align: center;
+  padding: 100px 40px;
+  position: relative;
+  z-index: 1;
+}
+
+.cta-section .ad-frame {
+  max-width: 700px;
+  margin: 0 auto;
+  background: var(--ink);
+  padding: 50px 40px;
+  border: 4px solid var(--ink);
+  box-shadow: 8px 8px 0 var(--red), -4px -4px 0 var(--teal);
+}
+
+.cta-section h2 {
+  font-family: 'Bangers', cursive;
+  font-size: clamp(36px, 6vw, 64px);
+  letter-spacing: 4px;
+  color: var(--mustard);
+  text-shadow: 3px 3px 0 var(--red);
+  margin-bottom: 20px;
+}
+
+.cta-section .desc {
+  font-family: 'Permanent Marker', cursive;
+  font-size: 20px;
+  color: var(--paper);
+  margin-bottom: 30px;
+  opacity: 0.9;
+}
+
+.cta-section .code-block {
+  display: inline-block;
+  margin-top: 20px;
+  padding: 12px 30px;
+  background: var(--paper);
+  border: 3px solid var(--paper);
+  font-family: 'Courier Prime', monospace;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Mini cassette decorations */
+.mini-cassette {
+  display: inline-block;
+  width: 40px; height: 26px;
+  background: var(--mustard);
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  position: relative;
+  vertical-align: middle;
+  margin: 0 5px;
+}
+
+.mini-cassette::before,
+.mini-cassette::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  width: 10px; height: 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper);
+}
+.mini-cassette::before { left: 5px; }
+.mini-cassette::after { right: 5px; }
+
+/* Footer — zine back cover */
+footer {
+  position: relative;
+  z-index: 1;
+  background: var(--ink);
+  padding: 50px 30px;
+  text-align: center;
+  border-top: 4px solid var(--red);
+}
+
+footer .brand {
+  font-family: 'Bangers', cursive;
+  font-size: 32px;
+  letter-spacing: 4px;
+  color: var(--mustard);
+  text-shadow: 2px 2px 0 var(--red);
+  margin-bottom: 10px;
+}
+
+footer .tag {
+  font-family: 'Permanent Marker', cursive;
+  font-size: 16px;
+  color: var(--paper);
+  opacity: 0.6;
+  margin-bottom: 20px;
+}
+
+footer .info {
+  font-family: 'Courier Prime', monospace;
+  font-size: 12px;
+  color: var(--paper);
+  opacity: 0.4;
+}
+
+/* Speech bubble decoration */
+.speech-bubble {
+  position: absolute;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  padding: 10px 18px;
+  font-family: 'Permanent Marker', cursive;
+  font-size: 14px;
+  color: var(--ink);
+  border-radius: 20px;
+  box-shadow: 3px 3px 0 var(--red);
+}
+
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -12px; left: 20px;
+  width: 0; height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 12px solid var(--paper);
+}
+
+.speech-bubble.left::after {
+  left: auto;
+  right: 20px;
+}
+
+/* Graffiti underline */
+.underline-scribble {
+  position: relative;
+  display: inline-block;
+}
+
+.underline-scribble::after {
+  content: '';
+  position: absolute;
+  bottom: -8px; left: 0; right: 0;
+  height: 6px;
+  background: var(--red);
+  clip-path: polygon(
+    0 50%, 5% 0%, 10% 100%, 15% 30%, 20% 80%, 25% 10%, 30% 90%,
+    35% 40%, 40% 70%, 45% 20%, 50% 100%, 55% 30%, 60% 80%, 65% 10%,
+    70% 90%, 75% 40%, 80% 70%, 85% 20%, 90% 100%, 95% 30%, 100% 50%
+  );
+}
+
+@media (max-width: 768px) {
+  nav ul { display: none; }
+  .strip-container { grid-template-columns: 1fr 1fr; }
+  .strip-panel { border-right: none; border-bottom: 4px solid var(--ink); }
+  .strip-panel .arrow-right { display: none; }
+  .burst { width: 400px; height: 400px; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo"><span class="tape-icon"></span>FERRITE</div>
+  <ul>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#how">How It Works</a></li>
+    <li><a href="#stack">Tech Stack</a></li>
+    <li><a href="#deploy">Deploy</a></li>
+  </ul>
+</nav>
+
+<section class="hero">
+  <div class="burst"></div>
+  <h1>FERRITE</h1>
+  <div class="by">a Kassett production · vol. 1 · 2026</div>
+
+  <div class="cassette">
+    <div class="label">FERRITE — SIDE A</div>
+    <div class="window">
+      <div class="tape-strip"></div>
+    </div>
+    <div class="reels">
+      <div class="reel"></div>
+      <div class="reel"></div>
+    </div>
+  </div>
+
+  <div class="tagline">PERSISTENT MEMORY FOR AI AGENTS</div>
+  <p class="desc">A temporal knowledge graph that gives AI agents long-term memory. Agents forget nothing — every conversation, document, and research paper becomes queryable knowledge. Press play on memory.</p>
+  <a href="#deploy" class="cta">DEPLOY IN 5 MINUTES</a>
+</section>
+
+<section id="features">
+  <h2 class="section-title"><span class="red">THE</span> <span class="teal">TRACKLIST</span></h2>
+  <p class="section-sub">~ nine tracks. zero skips. ~</p>
+  <div class="features-grid">
+    <div class="feature-panel comic-border red-shadow">
+      <div class="panel-header">TRACK 01</div>
+      <div class="panel-body">
+        <div class="issue-num">ISSUE #001 · NEO4J</div>
+        <h3>TEMPORAL GRAPH</h3>
+        <p>Every fact timestamped with valid_at and invalid_at. Track knowledge changes over time. Neo4j graph traversal for deep multi-hop queries.</p>
+        <span class="stamp">PLAYS ON REPEAT</span>
+      </div>
+    </div>
+    <div class="feature-panel comic-border teal-shadow">
+      <div class="panel-header">TRACK 02</div>
+      <div class="panel-body">
+        <div class="issue-num">ISSUE #002 · HINDSIGHT</div>
+        <h3>CONSOLIDATION</h3>
+        <p>Raw facts auto-consolidate into evidence-backed beliefs. Proof counts, evidence chains, staleness tracking. Facts become beliefs.</p>
+        <span class="stamp">GOLD</span>
+      </div>
+    </div>
+    <div class="feature-panel comic-border purple-shadow">
+      <div class="panel-header">TRACK 03</div>
+      <div class="panel-body">
+        <div class="issue-num">ISSUE #003 · RRF</div>
+        <h3>TEMPR SEARCH</h3>
+        <p>Four parallel strategies: semantic, BM25, graph, temporal. Fused with Reciprocal Rank Fusion. 2s per-strategy timeout.</p>
+        <span class="stamp">B-SIDE HIT</span>
+      </div>
+    </div>
+    <div class="feature-panel comic-border mustard-shadow">
+      <div class="panel-header">TRACK 04</div>
+      <div class="panel-body">
+        <div class="issue-num">ISSUE #004 · ISOLATED</div>
+        <h3>NAMESPACES</h3>
+        <p>Each agent gets isolated namespaces. Shared knowledge where you want it, private where you need it. Policy enforced at query layer.</p>
+        <span class="stamp">SOLO ACT</span>
+      </div>
+    </div>
+    <div class="feature-panel comic-border red-shadow">
+      <div class="panel-header">TRACK 05</div>
+      <div class="panel-body">
+        <div class="issue-num">ISSUE #005 · ZERO-COST</div>
+        <h3>SELF-HOSTED LLM</h3>
+        <p>DS-V4-Flash on your hardware. Zero API cost. Zero data leaving your network. Full sovereignty over extraction.</p>
+        <span class="stamp">DIY ETHOS</span>
+      </div>
+    </div>
+    <div class="feature-panel comic-border teal-shadow">
+      <div class="panel-header">TRACK 06</div>
+      <div class="panel-body">
+        <div class="issue-num">ISSUE #006 · SHA-256</div>
+        <h3>FILE STORAGE</h3>
+        <p>Store PDFs, code, web archives, voice transcripts. SHA-256 dedup, chunked embeddings. Re-extractable from canonical source.</p>
+        <span class="stamp">B-SIDE</span>
+      </div>
+    </div>
+    <div class="feature-panel comic-border purple-shadow">
+      <div class="panel-header">TRACK 07</div>
+      <div class="panel-body">
+        <div class="issue-num">ISSUE #007 · QDRANT</div>
+        <h3>PLUGGABLE VECTORS</h3>
+        <p>Start with Neo4j's built-in vector index. Swap to Qdrant at scale. Same API, zero code changes. VectorStore is an ABC.</p>
+        <span class="stamp">REMIX</span>
+      </div>
+    </div>
+    <div class="feature-panel comic-border mustard-shadow">
+      <div class="panel-header">TRACK 08</div>
+      <div class="panel-body">
+        <div class="issue-num">ISSUE #008 · MCP</div>
+        <h3>MCP NATIVE</h3>
+        <p>Agents connect via Model Context Protocol. No system prompt hacking. No fine-tuning. Just store() and search().</p>
+        <span class="stamp">NO LABEL</span>
+      </div>
+    </div>
+    <div class="feature-panel comic-border red-shadow">
+      <div class="panel-header">TRACK 09</div>
+      <div class="panel-body">
+        <div class="issue-num">ISSUE #009 · MNEMOSYNE</div>
+        <h3>FRESHNESS DECAY</h3>
+        <p>Older facts rank lower. Tier 1 full weight, Tier 3 gets 0.25x. Never deleted, just faded. Memory fades but never disappears.</p>
+        <span class="stamp">FADE OUT</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <h2 class="section-title"><span class="red">THE</span> <span class="teal">SETLIST</span></h2>
+  <p class="section-sub">~ from conversation to knowledge in four acts ~</p>
+  <div class="strip-container comic-border">
+    <div class="strip-panel">
+      <div class="num-burst">1</div>
+      <h4>STORE</h4>
+      <p>Agents store conversations and documents via MCP. Transcripts, PDFs, code — all ingested through one API.</p>
+      <span class="arrow-right">▶</span>
+    </div>
+    <div class="strip-panel">
+      <div class="num-burst">2</div>
+      <h4>EXTRACT</h4>
+      <p>LLM extracts entities, facts, relationships. Validated against JSON schema before writing to Neo4j. No fake nodes.</p>
+      <span class="arrow-right">▶</span>
+    </div>
+    <div class="strip-panel">
+      <div class="num-burst">3</div>
+      <h4>CONSOLIDATE</h4>
+      <p>Related facts merge into observations — evidence-backed beliefs with proof counts. Staleness tracking.</p>
+      <span class="arrow-right">▶</span>
+    </div>
+    <div class="strip-panel">
+      <div class="num-burst">4</div>
+      <h4>RETRIEVE</h4>
+      <p>TEMPR fuses 4 search strategies with RRF. Mental models first, then observations, then raw facts.</p>
+    </div>
+  </div>
+</section>
+
+<section id="stack">
+  <h2 class="section-title"><span class="red">THE</span> <span class="teal">GEAR</span></h2>
+  <p class="section-sub">~ what's in the pedalboard ~</p>
+  <div class="stickers">
+    <div class="sticker">Neo4j 5.x</div>
+    <div class="sticker">Redis</div>
+    <div class="sticker">FastAPI</div>
+    <div class="sticker">Next.js</div>
+    <div class="sticker">DS-V4-Flash</div>
+    <div class="sticker">nomic-embed-v1.5</div>
+    <div class="sticker">Docker</div>
+  </div>
+</section>
+
+<section id="deploy" class="cta-section">
+  <div class="ad-frame">
+    <h2>DROP THE NEEDLE</h2>
+    <p class="desc">One command. Zero config.<br>Your agents never forget again.</p>
+    <a href="#" class="cta">PRESS PLAY</a>
+    <div class="code-block">$ docker compose up</div>
+  </div>
+</section>
+
+<footer>
+  <div class="brand"><span class="mini-cassette"></span> FERRITE <span class="mini-cassette"></span></div>
+  <div class="tag">Persistent memory for autonomous AI agents</div>
+  <div class="info">© 2026 KASSETT MEMORY SYSTEMS · SELF-HOSTED · OPEN SOURCE · NO API COST · PRESS PLAY ON MEMORY</div>
+</footer>
+
+</body>
+</html>

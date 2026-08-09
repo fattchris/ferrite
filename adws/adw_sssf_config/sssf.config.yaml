@@ -1,0 +1,73 @@
+# sssf.config.yaml — Ferrite build roster
+# GLM-5.2 as architect/orchestrator (local via LiteLLM)
+# DeepSeek V4 Flash as implementer/builder (local via LiteLLM)
+# omp CLI for file access
+
+defaults:
+  coding_agent: pi
+  model: litellm/glm-5.2
+  thinking: medium
+  color: ""
+  tools: ["read", "bash", "edit", "write", "grep", "find", "ls"]
+  harness_engineering: []
+
+agents:
+  # Architect — GLM-5.2 via local LiteLLM. Heavy reasoning, plans the architecture.
+  - name: planner
+    coding_agent: pi
+    model: litellm/glm-5.2
+    thinking: high
+    color: "#60a5fa"
+    purpose: "Read the Ferrite spec v3 and produce implementation plans for the builder."
+    tools: ["read", "grep", "find", "ls", "bash", "write"]
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/planner/system.md
+      user: adws/adw_data/prompt_engineering/planner/user.md
+
+  # Reviewer — GLM-5.2 reviews builder output against the spec.
+  - name: reviewer
+    coding_agent: pi
+    model: litellm/glm-5.2
+    thinking: high
+    color: "#f87171"
+    purpose: "Review changed files against the Ferrite spec v3; approve or reject with specific fixes."
+    tools: ["read", "grep", "find", "ls", "bash"]
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/reviewer/system.md
+      user: adws/adw_data/prompt_engineering/reviewer/user.md
+
+  # Implementer — DeepSeek V4 Flash via local LiteLLM. Fast code generation.
+  - name: builder
+    coding_agent: pi
+    model: litellm/deepseek-v4-flash
+    thinking: medium
+    color: "#4ade80"
+    purpose: "Implement the Ferrite MVP from the spec: edit files, run tests, fix failures."
+    tools: ["read", "bash", "edit", "write", "grep", "find", "ls"]
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/builder/system.md
+      user: adws/adw_data/prompt_engineering/builder/user.md
+
+  # Scout — DS-V4-Flash for light recon (file discovery, code reading)
+  - name: scout
+    coding_agent: pi
+    model: litellm/deepseek-v4-flash
+    thinking: low
+    color: "#fbbf24"
+    purpose: "Find and report where things live in the codebase; change nothing."
+    tools: ["read", "grep", "find", "ls", "bash"]
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/scout/system.md
+      user: adws/adw_data/prompt_engineering/scout/user.md
+
+  # Documenter — GLM-5.2 for docs (better at prose)
+  - name: documenter
+    coding_agent: pi
+    model: litellm/glm-5.2
+    thinking: low
+    color: "#a78bfa"
+    purpose: "Write docs and changelogs based on what changed."
+    tools: ["read", "grep", "find", "ls", "write", "bash"]
+    prompt_engineering:
+      system: adws/adw_data/prompt_engineering/documenter/system.md
+      user: adws/adw_data/prompt_engineering/documenter/user.md

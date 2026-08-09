@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ferrite by Kassett - Persistent Memory for Autonomous AI Agents</title>
+<link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ====== RESET ====== */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* ====== TILED BACKGROUND ====== */
+  body {
+    font-family: "Comic Neue", "Comic Sans MS", cursive, sans-serif;
+    background-color: #000080;
+    background-image:
+      repeating-linear-gradient(45deg, #000080 0, #000080 38px, #000060 38px, #000060 76px),
+      repeating-linear-gradient(-45deg, transparent 0, transparent 38px, rgba(255,255,0,0.04) 38px, rgba(255,255,0,0.04) 76px);
+    background-attachment: fixed;
+    min-height: 100vh;
+    color: #000;
+    padding: 10px;
+  }
+
+  /* ====== MARQUEE ====== */
+  .top-marquee {
+    background: #000;
+    color: #ffff00;
+    font-family: "Courier New", monospace;
+    font-size: 14px;
+    padding: 3px 0;
+    border: 2px solid #c0c0c0;
+    overflow: hidden;
+    position: relative;
+    white-space: nowrap;
+  }
+  .top-marquee span {
+    display: inline-block;
+    padding-left: 100%;
+    animation: marquee-scroll 18s linear infinite;
+  }
+  @keyframes marquee-scroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-100%); }
+  }
+
+  /* ====== FAKE BANNER ROW ====== */
+  .banner-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0;
+  }
+  .under-construction {
+    background: #ffff00;
+    color: #000;
+    border: 3px outset #c0c0c0;
+    padding: 6px 14px;
+    font-weight: 700;
+    font-size: 15px;
+    text-align: center;
+    animation: blink-bg 1.2s steps(2) infinite;
+    cursor: default;
+    text-decoration: none;
+  }
+  @keyframes blink-bg {
+    50% { background: #ff8c00; }
+  }
+  .visitor-counter {
+    background: #000;
+    color: #00ff00;
+    font-family: "Courier New", monospace;
+    font-size: 18px;
+    font-weight: 700;
+    border: 3px inset #c0c0c0;
+    padding: 4px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .visitor-counter .label { color: #ffff00; font-size: 13px; }
+
+  /* ====== WIN95 WINDOW ====== */
+  .win95-window {
+    background: #c0c0c0;
+    border: 2px solid;
+    border-color: #dfdfdf #808080 #808080 #dfdfdf;
+    margin: 0 auto 10px;
+    max-width: 1100px;
+    box-shadow: 4px 4px 0 rgba(0,0,0,0.4);
+  }
+
+  .title-bar {
+    background: linear-gradient(to right, #000080 0%, #1084d0 100%);
+    color: #fff;
+    font-weight: 700;
+    font-size: 16px;
+    padding: 4px 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .title-bar .tb-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .title-bar .tb-icon {
+    width: 16px;
+    height: 16px;
+    background: #ffff00;
+    border: 1px solid #fff;
+    display: inline-block;
+    position: relative;
+  }
+  .title-bar .tb-icon::after {
+    content: "F";
+    position: absolute;
+    top: -1px;
+    left: 3px;
+    font-size: 13px;
+    color: #000;
+    font-weight: 700;
+  }
+  .title-bar-buttons { display: flex; gap: 2px; }
+  .title-bar-btn {
+    width: 18px;
+    height: 16px;
+    background: #c0c0c0;
+    border: 1px solid;
+    border-color: #dfdfdf #808080 #808080 #dfdfdf;
+    color: #000;
+    font-size: 10px;
+    font-weight: 700;
+    text-align: center;
+    line-height: 14px;
+    cursor: pointer;
+    font-family: "Comic Neue", sans-serif;
+  }
+  .title-bar-btn:active {
+    border-color: #808080 #dfdfdf #dfdfdf #808080;
+  }
+
+  .menu-bar {
+    display: flex;
+    gap: 0;
+    padding: 2px 2px;
+    border-bottom: 1px solid #808080;
+    font-size: 14px;
+  }
+  .menu-item {
+    padding: 2px 10px;
+    cursor: default;
+    user-select: none;
+  }
+  .menu-item:hover {
+    background: #000080;
+    color: #fff;
+  }
+
+  .window-content {
+    padding: 10px;
+  }
+
+  .status-bar {
+    background: #c0c0c0;
+    border-top: 1px solid #808080;
+    display: flex;
+    gap: 1px;
+    padding: 2px;
+    font-size: 12px;
+    font-family: "Courier New", monospace;
+  }
+  .status-bar-cell {
+    border: 1px inset #c0c0c0;
+    padding: 2px 8px;
+    color: #000;
+  }
+  .status-bar-cell.grow { flex: 1; }
+  .status-bar-cell.green { color: #008000; font-weight: 700; }
+
+  /* ====== HERO ====== */
+  .hero-section {
+    text-align: center;
+    padding: 30px 20px;
+    background: #000080;
+    color: #fff;
+    border: 3px outset #c0c0c0;
+    margin-bottom: 10px;
+    background-image:
+      repeating-linear-gradient(0deg, transparent 0, transparent 4px, rgba(255,255,255,0.02) 4px, rgba(255,255,255,0.02) 8px);
+  }
+  .hero-section h1 {
+    font-size: 48px;
+    font-weight: 700;
+    color: #ffff00;
+    text-shadow: 3px 3px 0 #000, 6px 6px 0 rgba(0,0,0,0.3);
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+  }
+  .hero-section .by-kassett {
+    font-size: 18px;
+    color: #fff;
+    margin-bottom: 12px;
+  }
+  .hero-section .by-kassett span { color: #ffff00; font-weight: 700; }
+  .hero-tagline {
+    font-size: 22px;
+    color: #fff;
+    margin-bottom: 16px;
+    font-style: italic;
+  }
+  .hero-desc {
+    font-size: 15px;
+    color: #c0c0c0;
+    max-width: 700px;
+    margin: 0 auto 20px;
+    line-height: 1.5;
+  }
+
+  /* ====== WIN95 BUTTON ====== */
+  .win95-btn {
+    display: inline-block;
+    background: #c0c0c0;
+    border: 2px outset #c0c0c0;
+    color: #000;
+    font-family: "Comic Neue", "Comic Sans MS", sans-serif;
+    font-weight: 700;
+    font-size: 16px;
+    padding: 8px 24px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: none;
+  }
+  .win95-btn:hover { border-color: #dfdfdf #808080 #808080 #dfdfdf; }
+  .win95-btn:active {
+    border-color: #808080 #dfdfdf #dfdfdf #808080;
+    padding: 9px 23px 7px 25px;
+  }
+  .win95-btn.green {
+    background: #008000;
+    color: #fff;
+    border-color: #00b000 #004000 #004000 #00b000;
+    font-size: 18px;
+    padding: 10px 30px;
+  }
+  .win95-btn.green:active {
+    border-color: #004000 #00b000 #00b000 #004000;
+    padding: 11px 29px 9px 31px;
+  }
+  .win95-btn.yellow {
+    background: #ffff00;
+    color: #000;
+    border-color: #ffff66 #999900 #999900 #ffff66;
+  }
+
+  /* ====== SECTION HEADING ====== */
+  .section-heading {
+    background: #000080;
+    color: #ffff00;
+    font-weight: 700;
+    font-size: 22px;
+    padding: 6px 10px;
+    border: 2px outset #c0c0c0;
+    margin: 20px 0 12px;
+    text-align: center;
+  }
+
+  /* ====== FEATURE DIALOG BOXES ====== */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 10px;
+  }
+  .dialog-box {
+    background: #c0c0c0;
+    border: 2px solid;
+    border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  }
+  .dialog-title {
+    background: linear-gradient(to right, #000080, #1084d0);
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    padding: 3px 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dialog-title .dt-icon {
+    width: 14px;
+    height: 14px;
+    background: #ffff00;
+    border: 1px solid #fff;
+    font-size: 10px;
+    color: #000;
+    text-align: center;
+    line-height: 14px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .dialog-body {
+    padding: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #000;
+  }
+  .dialog-body .feature-bullet {
+    color: #000080;
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .dialog-body .feature-desc {
+    color: #333;
+  }
+
+  /* ====== HOW IT WORKS ====== */
+  .how-it-works {
+    padding: 0;
+  }
+  .step-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: 2px;
+  }
+  .step-num {
+    background: #000080;
+    color: #ffff00;
+    font-weight: 700;
+    font-size: 28px;
+    width: 50px;
+    min-width: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px outset #c0c0c0;
+  }
+  .step-content {
+    flex: 1;
+    background: #c0c0c0;
+    border: 2px inset #c0c0c0;
+    padding: 8px 12px;
+  }
+  .step-content .step-title {
+    font-weight: 700;
+    color: #000080;
+    font-size: 15px;
+    margin-bottom: 2px;
+  }
+  .step-content .step-desc {
+    font-size: 13px;
+    color: #333;
+  }
+  .step-arrow {
+    align-self: center;
+    font-size: 20px;
+    color: #000080;
+    padding: 0 4px;
+    font-weight: 700;
+  }
+
+  /* ====== TECH STACK ====== */
+  .tech-stack {
+    background: #c0c0c0;
+    border: 2px inset #c0c0c0;
+    padding: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+  .tech-badge {
+    background: #fff;
+    border: 2px outset #c0c0c0;
+    padding: 4px 14px;
+    font-family: "Courier New", monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: #000080;
+    cursor: default;
+  }
+  .tech-badge:hover {
+    border-color: #808080 #dfdfdf #dfdfdf #808080;
+    background: #ffff00;
+  }
+  .tech-badge:active {
+    border-color: #808080 #dfdfdf #dfdfdf #808080;
+  }
+
+  /* ====== CTA SECTION ====== */
+  .cta-section {
+    text-align: center;
+    padding: 30px 20px;
+    background: #000080;
+    color: #fff;
+    border: 3px outset #c0c0c0;
+  }
+  .cta-section h2 {
+    color: #ffff00;
+    font-size: 32px;
+    text-shadow: 2px 2px 0 #000;
+    margin-bottom: 10px;
+  }
+  .cta-section p {
+    font-size: 15px;
+    margin-bottom: 16px;
+    color: #c0c0c0;
+  }
+  .code-block {
+    background: #000;
+    color: #00ff00;
+    font-family: "Courier New", monospace;
+    font-size: 15px;
+    padding: 10px 20px;
+    border: 3px inset #c0c0c0;
+    display: inline-block;
+    margin: 0 auto 16px;
+    text-align: left;
+  }
+  .code-block .prompt { color: #c0c0c0; }
+  .code-block .cmd { color: #ffff00; }
+
+  /* ====== FOOTER ====== */
+  .footer {
+    text-align: center;
+    padding: 14px;
+    background: #c0c0c0;
+    border: 2px solid;
+    border-color: #dfdfdf #808080 #808080 #dfdfdf;
+    font-size: 12px;
+    color: #000;
+    margin-top: 10px;
+  }
+  .footer a { color: #000080; text-decoration: underline; }
+  .footer .footer-links {
+    margin-bottom: 6px;
+  }
+  .footer .footer-links a { margin: 0 6px; }
+  .footer .badge-row {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 8px 0;
+  }
+  .footer-badge {
+    background: #000080;
+    color: #ffff00;
+    border: 2px outset #c0c0c0;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .footer-badge.green { background: #008000; color: #fff; }
+  .footer-badge.yellow { background: #ffff00; color: #000; }
+
+  /* ====== MISC ====== */
+  .blink {
+    animation: blink-text 1s steps(2) infinite;
+  }
+  @keyframes blink-text {
+    50% { opacity: 0; }
+  }
+  .hr-3d {
+    border: none;
+    height: 3px;
+    background: #c0c0c0;
+    border-top: 1px solid #808080;
+    border-bottom: 1px solid #dfdfdf;
+    margin: 10px 0;
+  }
+
+  @media (max-width: 600px) {
+    .hero-section h1 { font-size: 32px; }
+    .cta-section h2 { font-size: 24px; }
+    .features-grid { grid-template-columns: 1fr; }
+    .step-arrow { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== TOP MARQUEE ===== -->
+<div class="top-marquee">
+  <span>
+    &#9733; Welcome to the Ferrite Homepage! &#9733; The #1 Temporal Knowledge Graph for AI Agents! &#9733; Now with TEMPR Multi-Strategy Retrieval! &#9733; Zero API Cost with Self-Hosted LLM Extraction! &#9733; Best viewed in Netscape Navigator 3.0 or Internet Explorer 4.0 at 800x600! &#9733;
+  </span>
+</div>
+
+<!-- ===== BANNER ROW ===== -->
+<div class="banner-row">
+  <div class="under-construction">
+    &#9888;&#65039; UNDER CONSTRUCTION &#9888;&#65039; — But it actually works!
+  </div>
+  <div class="visitor-counter">
+    <span class="label">Visitors:</span>
+    <span>0013842</span>
+  </div>
+</div>
+
+<!-- ===== FERRITE EXPLORER WINDOW ===== -->
+<div class="win95-window">
+
+  <!-- Title Bar -->
+  <div class="title-bar">
+    <div class="tb-left">
+      <span class="tb-icon"></span>
+      <span>Ferrite Explorer &mdash; C:\FERRITE\INDEX.HTML</span>
+    </div>
+    <div class="title-bar-buttons">
+      <span class="title-bar-btn" title="Minimize">_</span>
+      <span class="title-bar-btn" title="Maximize">&#9633;</span>
+      <span class="title-bar-btn" title="Close">&#10005;</span>
+    </div>
+  </div>
+
+  <!-- Menu Bar -->
+  <div class="menu-bar">
+    <span class="menu-item"><u>F</u>ile</span>
+    <span class="menu-item"><u>E</u>dit</span>
+    <span class="menu-item"><u>V</u>iew</span>
+    <span class="menu-item">F<u>a</u>vorites</span>
+    <span class="menu-item"><u>T</u>ools</span>
+    <span class="menu-item"><u>H</u>elp</span>
+  </div>
+
+  <!-- Window Content -->
+  <div class="window-content">
+
+    <!-- ===== HERO ===== -->
+    <div class="hero-section">
+      <h1>&#9884; FERRITE &#9884;</h1>
+      <div class="by-kassett">by <span>Kassett</span></div>
+      <div class="hero-tagline">"Persistent memory for autonomous AI agents"</div>
+      <p class="hero-desc">
+        A temporal knowledge graph that gives AI agents long-term memory.
+        Agents forget nothing &mdash; every conversation, document, and research paper
+        becomes queryable knowledge.
+      </p>
+      <br>
+      <a href="#deploy" class="win95-btn green">&#9654; Deploy in 5 Minutes</a>
+      &nbsp;
+      <a href="#features" class="win95-btn yellow">View Features &raquo;</a>
+    </div>
+
+    <!-- ===== FEATURES ===== -->
+    <div class="section-heading" id="features">
+      &#9733; Features &#9733; (Double-click any icon to learn more!)
+    </div>
+    <div class="features-grid">
+
+      <div class="dialog-box">
+        <div class="dialog-title">
+          <span class="dt-icon">G</span>
+          Temporal Knowledge Graph
+        </div>
+        <div class="dialog-body">
+          <div class="feature-bullet">&raquo; Neo4j-powered graph database</div>
+          <div class="feature-desc">
+            Stores entities, relationships, and facts with full temporal versioning.
+            Time-travel through your agent's knowledge &mdash; see what was known
+            at any point in history.
+          </div>
+        </div>
+      </div>
+
+      <div class="dialog-box">
+        <div class="dialog-title">
+          <span class="dt-icon">O</span>
+          Observation Consolidation
+        </div>
+        <div class="dialog-body">
+          <div class="feature-bullet">&raquo; Facts &rarr; Evidence-backed beliefs</div>
+          <div class="feature-desc">
+            Raw facts don't just pile up. Ferrite consolidates them into
+            weighted observations with full evidence trails. Your agent
+            knows not just <i>what</i> it knows, but <i>why</i> and <i>how confident</i> it is.
+          </div>
+        </div>
+      </div>
+
+      <div class="dialog-box">
+        <div class="dialog-title">
+          <span class="dt-icon">T</span>
+          TEMPR Multi-Strategy Retrieval
+        </div>
+        <div class="dialog-body">
+          <div class="feature-bullet">&raquo; 4 search strategies, fused</div>
+          <div class="feature-desc">
+            Semantic search + BM25 keyword + graph traversal + temporal
+            reasoning, combined via Reciprocal Rank Fusion (RRF). The right
+            answer, no matter how your agent phrases the query.
+          </div>
+        </div>
+      </div>
+
+      <div class="dialog-box">
+        <div class="dialog-title">
+          <span class="dt-icon">N</span>
+          Multi-Agent Namespace Isolation
+        </div>
+        <div class="dialog-body">
+          <div class="feature-bullet">&raquo; Separate agents, shared infra</div>
+          <div class="feature-desc">
+            Run multiple agents on one Ferrite instance with full namespace
+            isolation. Each agent sees only its own knowledge graph &mdash;
+            no cross-contamination, no data leakage.
+          </div>
+        </div>
+      </div>
+
+      <div class="dialog-box">
+        <div class="dialog-title">
+          <span class="dt-icon">L</span>
+          Self-Hosted LLM Extraction
+        </div>
+        <div class="dialog-body">
+          <div class="feature-bullet">&raquo; Zero API cost, full privacy</div>
+          <div class="feature-desc">
+            Entity and fact extraction runs on DS-V4-Flash, self-hosted on
+            your own infrastructure. No per-token API fees, no data leaving
+            your network. Your knowledge stays yours.
+          </div>
+        </div>
+      </div>
+
+      <div class="dialog-box">
+        <div class="dialog-title">
+          <span class="dt-icon">F</span>
+          File Storage
+        </div>
+        <div class="dialog-body">
+          <div class="feature-bullet">&raquo; PDFs, code, web archives</div>
+          <div class="feature-desc">
+            Store and retrieve raw files alongside structured knowledge.
+            Agents can reference the source document behind any extracted
+            fact &mdash; full provenance, always traceable.
+          </div>
+        </div>
+      </div>
+
+      <div class="dialog-box" style="grid-column: 1 / -1;">
+        <div class="dialog-title">
+          <span class="dt-icon">V</span>
+          Pluggable Vector Store
+        </div>
+        <div class="dialog-body">
+          <div class="feature-bullet">&raquo; Bring your own embeddings backend</div>
+          <div class="feature-desc">
+            Ferrite ships with nomic-embed-text-v1.5 out of the box, but the
+            vector store is fully pluggable. Swap in your preferred backend
+            without touching agent logic. Defaults that work, flexibility when you need it.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== HOW IT WORKS ===== -->
+    <div class="section-heading" id="how">
+      &#9656; How It Works &#9656;
+    </div>
+    <div class="how-it-works">
+
+      <div class="step-row">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-title">Store</div>
+          <div class="step-desc">
+            Agents store conversations and documents via MCP (Model Context
+            Protocol). Anything an agent reads, writes, or discusses flows
+            into Ferrite automatically.
+          </div>
+        </div>
+      </div>
+
+      <div class="step-arrow" style="text-align:center;">&#9660;</div>
+
+      <div class="step-row">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-title">Extract</div>
+          <div class="step-desc">
+            A self-hosted LLM (DS-V4-Flash) extracts entities and facts from
+            raw content. Zero API cost, full privacy &mdash; extraction runs
+            on your own infrastructure.
+          </div>
+        </div>
+      </div>
+
+      <div class="step-arrow" style="text-align:center;">&#9660;</div>
+
+      <div class="step-row">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-title">Consolidate</div>
+          <div class="step-desc">
+            Facts consolidate into evidence-backed observations. Conflicting
+            evidence is reconciled with confidence scores and temporal
+            versioning &mdash; your agent develops a coherent worldview.
+          </div>
+        </div>
+      </div>
+
+      <div class="step-arrow" style="text-align:center;">&#9660;</div>
+
+      <div class="step-row">
+        <div class="step-num">4</div>
+        <div class="step-content">
+          <div class="step-title">Retrieve</div>
+          <div class="step-desc">
+            TEMPR retrieval fuses 4 search strategies &mdash; semantic, BM25,
+            graph traversal, and temporal reasoning &mdash; via Reciprocal
+            Rank Fusion (RRF). Your agent gets the right answer, every time.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== TECH STACK ===== -->
+    <div class="section-heading" id="stack">
+      &#9881; Technology Stack &#9881;
+    </div>
+    <div class="tech-stack">
+      <span class="tech-badge">Neo4j</span>
+      <span class="tech-badge">Redis</span>
+      <span class="tech-badge">FastAPI</span>
+      <span class="tech-badge">Next.js</span>
+      <span class="tech-badge">DS-V4-Flash</span>
+      <span class="tech-badge">nomic-embed-text-v1.5</span>
+    </div>
+
+    <!-- ===== CTA ===== -->
+    <div class="section-heading" id="deploy">
+      &#128187; Deploy Ferrite Now! &#128187;
+    </div>
+    <div class="cta-section">
+      <h2>Deploy in 5 Minutes</h2>
+      <p>Just one command. Docker handles the rest. Your agent gets permanent memory today.</p>
+      <div class="code-block">
+<span class="prompt">user@localhost:~$</span> <span class="cmd">docker compose up</span><br>
+<span style="color:#00ff00;">[+] Running 7/7</span><br>
+<span style="color:#888;"> &#10003; Container ferrite-neo4j       Started</span><br>
+<span style="color:#888;"> &#10003; Container ferrite-redis        Started</span><br>
+<span style="color:#888;"> &#10003; Container ferrite-api         Started</span><br>
+<span style="color:#888;"> &#10003; Container ferrite-web         Started</span><br>
+<span style="color:#888;"> &#10003; Container ferrite-llm         Started</span><br>
+<span style="color:#ffff00;">Ferrite is live at http://localhost:3000</span>
+      </div>
+      <br>
+      <a href="#" class="win95-btn green" onclick="alert('Ferrite deployed successfully! Your agents now have permanent memory.'); return false;">&#9654; Run docker compose up</a>
+      &nbsp;
+      <a href="#how" class="win95-btn">Read the Docs &raquo;</a>
+    </div>
+
+    <hr class="hr-3d">
+
+    <!-- ===== FOOTER ===== -->
+    <div class="footer" id="footer">
+      <div class="footer-links">
+        <a href="#">Home</a> |
+        <a href="#">Documentation</a> |
+        <a href="#">GitHub</a> |
+        <a href="#">Docker Hub</a> |
+        <a href="#">Contact</a>
+      </div>
+      <div class="badge-row">
+        <span class="footer-badge green">&#10003; Open Source</span>
+        <span class="footer-badge">&#10003; Self-Hosted</span>
+        <span class="footer-badge yellow">&#10003; No API Cost</span>
+        <span class="footer-badge">&#10003; MCP Compatible</span>
+      </div>
+      <p>
+        Ferrite by <strong>Kassett</strong> &mdash; Persistent memory for autonomous AI agents.<br>
+        &copy; 1996-2026 Kassett. All rights reserved.<br>
+        <span class="blink" style="color:#000080;">This page is best viewed at 800&times;600 resolution.</span>
+      </p>
+      <p style="margin-top:6px; font-size:11px; color:#666;">
+        This page hand-crafted with &lt;TABLE&gt; tags and &lt;MARQUEE&gt; elements. No JavaScript frameworks were harmed in the making of this page.
+      </p>
+    </div>
+
+  </div><!-- /window-content -->
+
+  <!-- Status Bar -->
+  <div class="status-bar">
+    <div class="status-bar-cell grow">Done</div>
+    <div class="status-bar-cell green">&#9679; Connected</div>
+    <div class="status-bar-cell">MCP: Active</div>
+    <div class="status-bar-cell">TEMPR: Ready</div>
+  </div>
+
+</div><!-- /win95-window -->
+
+<!-- ===== BOTTOM MARQUEE ===== -->
+<div class="top-marquee" style="margin-top:10px;">
+  <span>
+    &#9654; Ferrite: Agents that never forget &#9654; Temporal Knowledge Graph + TEMPR Retrieval &#9654; Self-hosted, zero API cost &#9654; docker compose up and you're live &#9654; Built by Kassett &#9654; Sign our guestbook! &#9654;
+  </span>
+</div>
+
+<div style="text-align:center; padding: 10px 0 20px;">
+  <a href="#" class="win95-btn" onclick="alert('Thanks for visiting the Ferrite homepage!'); return false;">Sign My Guestbook</a>
+  &nbsp;
+  <a href="#" class="win95-btn yellow" onclick="window.scrollTo({top:0,behavior:'smooth'}); return false;">&#9650; Back to Top</a>
+</div>
+
+</body>
+</html>

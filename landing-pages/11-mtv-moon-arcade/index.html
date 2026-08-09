@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FERRITE — Kassett</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--pink:#ff6ec7;--teal:#2ec4b6;--yellow:#ffd60a;--bg:#1a0a2e;--white:#fff}
+html{scroll-behavior:smooth}
+body{font-family:'VT323',monospace;background:var(--bg);color:var(--white);overflow-x:hidden;line-height:1.5;font-size:18px}
+body::before{content:'';position:fixed;inset:0;background:linear-gradient(180deg,rgba(26,10,46,.4),rgba(26,10,46,.85)),url('../assets-shared/mtv-moon.jpg') center/cover fixed;pointer-events:none;z-index:0}
+body::after{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,.15) 2px,rgba(0,0,0,.15) 3px);pointer-events:none;z-index:9999}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(26,10,46,.95);border-bottom:2px solid var(--pink);padding:12px 30px;display:flex;justify-content:space-between;align-items:center}
+nav .logo{font-family:'Press Start 2P',cursive;font-size:16px;color:var(--yellow);text-shadow:2px 2px 0 var(--pink)}
+nav ul{display:flex;list-style:none;gap:20px}
+nav a{font-family:'Press Start 2P',cursive;color:var(--white);text-decoration:none;font-size:10px;letter-spacing:1px;transition:color .2s}
+nav a:hover{color:var(--teal)}
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:100px 30px;position:relative;z-index:1}
+.hero h1{font-family:'Press Start 2P',cursive;font-size:clamp(36px,8vw,80px);color:var(--yellow);text-shadow:3px 3px 0 var(--pink),6px 6px 0 var(--teal);margin-bottom:20px;line-height:1.1}
+.hero .tagline{font-family:'Press Start 2P',cursive;font-size:clamp(10px,2vw,14px);color:var(--white);line-height:2;margin-bottom:30px}
+.hero .desc{max-width:600px;font-size:20px;opacity:.7;margin-bottom:40px}
+.cta{display:inline-block;padding:14px 40px;font-family:'Press Start 2P',cursive;font-size:12px;color:var(--bg);background:var(--yellow);border:3px solid var(--yellow);text-decoration:none;transition:all .15s;box-shadow:4px 4px 0 var(--pink)}
+.cta:hover{background:var(--teal);border-color:var(--teal);box-shadow:4px 4px 0 var(--pink)}
+.cta:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--pink)}
+section{position:relative;z-index:1;padding:80px 30px;max-width:1100px;margin:0 auto}
+.section-title{font-family:'Press Start 2P',cursive;font-size:clamp(18px,3vw,28px);text-align:center;margin-bottom:50px;color:var(--teal);text-shadow:2px 2px 0 var(--pink)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+.card{background:rgba(15,5,30,.9);border:2px solid var(--teal);padding:25px;transition:all .2s}
+.card:hover{border-color:var(--pink);box-shadow:0 0 15px rgba(255,110,199,.2)}
+.card h3{font-family:'Press Start 2P',cursive;font-size:11px;color:var(--yellow);margin-bottom:10px;line-height:1.5}
+.card p{font-size:16px;opacity:.7}
+.card .badge{display:inline-block;font-family:'Press Start 2P',cursive;font-size:8px;padding:4px 8px;background:var(--pink);color:var(--bg);margin-top:10px}
+.card:nth-child(even) .badge{background:var(--teal)}
+.card:nth-child(3n) .badge{background:var(--yellow)}
+.steps{display:flex;flex-wrap:wrap;justify-content:center;gap:15px}
+.step{flex:1;min-width:160px;max-width:200px;text-align:center;padding:20px;border:2px solid var(--pink)}
+.step .n{font-family:'Press Start 2P',cursive;font-size:20px;color:var(--yellow);display:block;margin-bottom:10px}
+.step h4{font-family:'Press Start 2P',cursive;font-size:10px;color:var(--teal);margin-bottom:8px}
+.step p{font-size:14px;opacity:.6}
+.tech{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
+.tech div{padding:8px 16px;border:2px solid var(--teal);font-size:14px;color:var(--teal);transition:all .2s}
+.tech div:hover{border-color:var(--yellow);color:var(--yellow);background:rgba(255,214,10,.1)}
+.deploy{text-align:center;padding:80px 30px}
+.deploy h2{font-family:'Press Start 2P',cursive;font-size:clamp(20px,4vw,32px);color:var(--yellow);text-shadow:2px 2px 0 var(--pink);margin-bottom:20px}
+.code{display:inline-block;margin-top:25px;padding:12px 30px;background:rgba(0,0,0,.6);border:2px solid var(--teal);font-size:18px;color:var(--teal)}
+footer{position:relative;z-index:1;text-align:center;padding:30px 20px;border-top:2px solid var(--teal);font-size:14px;opacity:.4}
+@media(max-width:768px){nav ul{display:none}}
+</style>
+</head>
+<body>
+<nav><div class="logo">FERRITE</div><ul><li><a href="#features">Features</a></li><li><a href="#how">How</a></li><li><a href="#stack">Stack</a></li><li><a href="#deploy">Deploy</a></li></ul></nav>
+<div class="hero"><h1>FERRITE</h1><div class="tagline">PERSISTENT MEMORY<br>FOR AI AGENTS</div><p class="desc">A temporal knowledge graph that gives AI agents long-term memory. Agents forget nothing — every conversation, document, and research paper becomes queryable knowledge.</p><a href="#deploy" class="cta">▶ DEPLOY</a></div>
+<section id="features"><h2 class="section-title">FEATURES</h2><div class="grid">
+<div class="card"><h3>TEMPORAL GRAPH</h3><p>Every fact timestamped. Track knowledge changes over time. Neo4j deep graph traversal.</p><span class="badge">LVL 1</span></div>
+<div class="card"><h3>CONSOLIDATION</h3><p>Raw facts auto-consolidate into evidence-backed beliefs. Proof counts from Hindsight.</p><span class="badge">LVL 2</span></div>
+<div class="card"><h3>TEMPR SEARCH</h3><p>Four parallel strategies: semantic, BM25, graph, temporal. Fused with RRF. 2s timeout.</p><span class="badge">LVL 3</span></div>
+<div class="card"><h3>NAMESPACES</h3><p>Each agent gets isolated namespaces. Shared where you want, private where you need.</p><span class="badge">LVL 4</span></div>
+<div class="card"><h3>SELF-HOSTED LLM</h3><p>DS-V4-Flash on your hardware. Zero API cost. Zero data leaving your network.</p><span class="badge">LVL 5</span></div>
+<div class="card"><h3>FILE STORAGE</h3><p>Store PDFs, code, web archives. SHA-256 dedup, chunked embeddings.</p><span class="badge">LVL 6</span></div>
+<div class="card"><h3>PLUGGABLE VECTORS</h3><p>Neo4j vector index → Qdrant at scale. Same API, zero code changes.</p><span class="badge">LVL 7</span></div>
+<div class="card"><h3>MCP NATIVE</h3><p>Agents connect via Model Context Protocol. Just store() and search().</p><span class="badge">LVL 8</span></div>
+<div class="card"><h3>FRESHNESS DECAY</h3><p>Older facts rank lower. Tier 1 full, Tier 3 gets 0.25x. From Mnemosyne.</p><span class="badge">LVL 9</span></div>
+</div></section>
+<section id="how"><h2 class="section-title">GAME FLOW</h2><div class="steps">
+<div class="step"><span class="n">01</span><h4>STORE</h4><p>Agents store conversations and documents via MCP.</p></div>
+<div class="step"><span class="n">02</span><h4>EXTRACT</h4><p>LLM extracts entities, facts. Validated against JSON schema.</p></div>
+<div class="step"><span class="n">03</span><h4>CONSOLIDATE</h4><p>Related facts merge into observations with proof counts.</p></div>
+<div class="step"><span class="n">04</span><h4>RETRIEVE</h4><p>TEMPR fuses 4 search strategies with RRF.</p></div>
+</div></section>
+<section id="stack"><h2 class="section-title">INVENTORY</h2><div class="tech"><div>Neo4j</div><div>Redis</div><div>FastAPI</div><div>Next.js</div><div>DS-V4-Flash</div><div>nomic-embed-v1.5</div><div>Docker</div></div></section>
+<section id="deploy" class="deploy"><h2>READY TO DEPLOY?</h2><p style="opacity:.6;font-size:18px;margin-bottom:30px">One command. Zero config. Your agents never forget again.</p><a href="#" class="cta">▶ START</a><div class="code">$ docker compose up</div></section>
+<footer><p>FERRITE by KASSETT · Self-hosted · Open source</p></footer>
+</body>
+</html>

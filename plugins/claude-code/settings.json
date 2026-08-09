@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "ferrite": {
+      "url": "http://localhost:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer ${FERRITE_API_KEY}"
+      },
+      "timeout": 30
+    }
+  },
+  "hooks": {
+    "SessionEnd": [
+      {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "curl -s -X POST http://localhost:8001/ingest/session -H 'Authorization: Bearer ${FERRITE_API_KEY}' -H 'Content-Type: application/json' -d '{\"session_id\": \"${CLAUDE_SESSION_ID}\", \"transcript_path\": \"${CLAUDE_SESSION_FILE}\", \"agent\": \"claude-code\", \"namespace\": \"default\"}'"
+        }
+      ]
+      }
+    ]
+  }
+}

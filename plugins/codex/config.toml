@@ -1,0 +1,11 @@
+# Ferrite MCP server for Codex CLI
+# Location: ~/.codex/config.toml
+#
+# Codex CLI doesn't have session hooks (feature request #13056).
+# For auto-ingest, use the wrapper script in this directory.
+
+[mcp_server.ferrite]
+url = "http://localhost:8000/mcp"
+
+[mcp_server.ferrite.headers]
+Authorization = "Bearer ${FERRITE_API_KEY}"

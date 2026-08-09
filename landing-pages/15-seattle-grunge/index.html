@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FERRITE — Kassett</title>
+<link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Oswald:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--grey:#4a4a4a;--dark-grey:#2a2a2a;--white:#d4d4d4;--rain:#6a8caf;--red:#8b0000;--bg:#0f0f0f}
+html{scroll-behavior:smooth}
+body{font-family:'Oswald',sans-serif;background:var(--bg);color:var(--white);overflow-x:hidden;line-height:1.6}
+body::before{content:'';position:fixed;inset:0;background:linear-gradient(180deg,rgba(15,15,15,.4),rgba(15,15,15,.88)),url('../assets-shared/seattle-grunge.jpg') center/cover fixed;pointer-events:none;z-index:0}
+body::after{content:'';position:fixed;inset:0;background-image:radial-gradient(circle,rgba(255,255,255,.015) 1px,transparent 1px);background-size:3px 3px;pointer-events:none;z-index:9990}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(15,15,15,.95);backdrop-filter:blur(10px);border-bottom:2px solid var(--grey);padding:14px 40px;display:flex;justify-content:space-between;align-items:center}
+nav .logo{font-family:'Permanent Marker',cursive;font-size:28px;color:var(--white);letter-spacing:1px}
+nav ul{display:flex;list-style:none;gap:25px}
+nav a{color:var(--grey);text-decoration:none;font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:1px;transition:color .3s}
+nav a:hover{color:var(--white)}
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:100px 30px;position:relative;z-index:1}
+.hero h1{font-family:'Permanent Marker',cursive;font-size:clamp(50px,12vw,120px);line-height:.9;margin-bottom:15px;color:var(--white);text-shadow:2px 2px 0 var(--red);transform:rotate(-2deg)}
+.hero .tagline{font-family:'Permanent Marker',cursive;font-size:clamp(18px,3vw,26px);color:var(--grey);margin-bottom:25px;transform:rotate(1deg)}
+.hero .desc{max-width:600px;font-size:17px;opacity:.6;margin-bottom:40px;line-height:1.7}
+.cta{display:inline-block;padding:14px 45px;font-family:'Permanent Marker',cursive;font-size:20px;color:var(--white);background:transparent;border:2px solid var(--grey);text-decoration:none;transition:all .2s;transform:rotate(-1deg)}
+.cta:hover{border-color:var(--white);background:rgba(255,255,255,.05)}
+section{position:relative;z-index:1;padding:90px 40px;max-width:1200px;margin:0 auto}
+.section-title{font-family:'Permanent Marker',cursive;font-size:clamp(36px,6vw,56px);text-align:center;margin-bottom:50px;color:var(--white);opacity:.8;transform:rotate(-1deg)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:25px}
+.card{background:rgba(20,20,20,.85);backdrop-filter:blur(5px);border:1px solid var(--dark-grey);padding:30px;transition:all .3s}
+.card:hover{border-color:var(--grey);box-shadow:0 0 20px rgba(0,0,0,.3)}
+.card h3{font-family:'Permanent Marker',cursive;font-size:22px;color:var(--white);margin-bottom:10px;opacity:.9}
+.card p{font-size:14px;opacity:.5}
+.card .tag{display:inline-block;font-family:'Permanent Marker',cursive;font-size:13px;padding:3px 10px;border:1px solid var(--grey);margin-top:10px;color:var(--grey)}
+.steps{display:flex;flex-wrap:wrap;justify-content:center;gap:20px}
+.step{flex:1;min-width:180px;max-width:230px;text-align:center;padding:25px;border:1px solid var(--dark-grey)}
+.step .n{font-family:'Permanent Marker',cursive;font-size:36px;color:var(--red);display:block;margin-bottom:5px;opacity:.7}
+.step h4{font-family:'Permanent Marker',cursive;font-size:18px;color:var(--white);margin-bottom:8px;opacity:.8}
+.step p{font-size:13px;opacity:.4}
+.tech{display:flex;flex-wrap:wrap;justify-content:center;gap:12px}
+.tech div{padding:10px 22px;border:1px solid var(--grey);font-size:14px;color:var(--grey);transition:all .2s}
+.tech div:hover{color:var(--white);border-color:var(--white)}
+.deploy{text-align:center;padding:100px 40px}
+.deploy h2{font-family:'Permanent Marker',cursive;font-size:clamp(36px,6vw,56px);margin-bottom:20px;color:var(--white);opacity:.8;transform:rotate(-1deg)}
+.code{display:inline-block;margin-top:25px;padding:12px 30px;background:rgba(0,0,0,.6);border:1px solid var(--grey);font-family:monospace;font-size:16px;color:var(--white);opacity:.7}
+footer{position:relative;z-index:1;text-align:center;padding:40px 20px;border-top:1px solid var(--dark-grey);font-size:13px;opacity:.3}
+@media(max-width:768px){nav ul{display:none}}
+</style>
+</head>
+<body>
+<nav><div class="logo">Ferrite</div><ul><li><a href="#features">Features</a></li><li><a href="#how">How</a></li><li><a href="#stack">Stack</a></li><li><a href="#deploy">Deploy</a></li></ul></nav>
+<div class="hero"><h1>Ferrite</h1><div class="tagline">Persistent memory for AI agents</div><p class="desc">A temporal knowledge graph that gives AI agents long-term memory. Agents forget nothing — every conversation, document, and research paper becomes queryable knowledge.</p><a href="#deploy" class="cta">Deploy in 5 min</a></div>
+<section id="features"><h2 class="section-title">what it does</h2><div class="grid">
+<div class="card"><h3>Temporal Graph</h3><p>Every fact timestamped with valid_at and invalid_at. Track knowledge changes over time. Neo4j deep graph traversal.</p><span class="tag">plays on repeat</span></div>
+<div class="card"><h3>Consolidation</h3><p>Raw facts auto-consolidate into evidence-backed beliefs. Proof counts, evidence chains, staleness tracking from Hindsight.</p><span class="tag">gold</span></div>
+<div class="card"><h3>TEMPR Search</h3><p>Four parallel strategies: semantic, BM25, graph, temporal. Fused with Reciprocal Rank Fusion. 2s per-strategy timeout.</p><span class="tag">b-side</span></div>
+<div class="card"><h3>Namespaces</h3><p>Each agent gets isolated namespaces. Shared where you want, private where you need. Policy at query layer.</p><span class="tag">solo</span></div>
+<div class="card"><h3>Self-Hosted LLM</h3><p>DS-V4-Flash on your hardware. Zero API cost. Zero data leaving your network. Full sovereignty.</p><span class="tag">diy</span></div>
+<div class="card"><h3>File Storage</h3><p>Store PDFs, code, web archives. SHA-256 dedup, chunked embeddings. Re-extractable from canonical source.</p><span class="tag">b-side</span></div>
+<div class="card"><h3>Pluggable Vectors</h3><p>Start with Neo4j vector index. Swap to Qdrant at scale. Same API, zero code changes. ABC interface.</p><span class="tag">remix</span></div>
+<div class="card"><h3>MCP Native</h3><p>Agents connect via Model Context Protocol. No system prompt hacking. Just store() and search().</p><span class="tag">no label</span></div>
+<div class="card"><h3>Freshness Decay</h3><p>Older facts rank lower. Tier 1 full weight, Tier 3 gets 0.25x. From Mnemosyne. Never deleted, just faded.</p><span class="tag">fade out</span></div>
+</div></section>
+<section id="how"><h2 class="section-title">how it works</h2><div class="steps">
+<div class="step"><span class="n">01</span><h4>Store</h4><p>Agents store conversations and documents via MCP.</p></div>
+<div class="step"><span class="n">02</span><h4>Extract</h4><p>LLM extracts entities, facts. Validated against JSON schema.</p></div>
+<div class="step"><span class="n">03</span><h4>Consolidate</h4><p>Related facts merge into observations with proof counts.</p></div>
+<div class="step"><span class="n">04</span><h4>Retrieve</h4><p>TEMPR fuses 4 search strategies with RRF.</p></div>
+</div></section>
+<section id="stack"><h2 class="section-title">the gear</h2><div class="tech"><div>Neo4j</div><div>Redis</div><div>FastAPI</div><div>Next.js</div><div>DS-V4-Flash</div><div>nomic-embed-v1.5</div><div>Docker</div></div></section>
+<section id="deploy" class="deploy"><h2>ready?</h2><p style="opacity:.5;font-size:18px;margin-bottom:30px">One command. Zero config. Your agents never forget again.</p><a href="#" class="cta">Get started</a><div class="code">$ docker compose up</div></section>
+<footer><p>Ferrite by Kassett · Persistent memory for autonomous AI agents · Self-hosted · Open source</p></footer>
+</body>
+</html>

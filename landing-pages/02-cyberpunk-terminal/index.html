@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FERRITE :: Kassett :: Persistent Memory for AI Agents</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --green: #00ff41;
+  --green-dim: #008f24;
+  --green-bg: #001a08;
+  --black: #000000;
+  --red: #ff0040;
+  --amber: #ffb000;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Share Tech Mono', monospace;
+  background: var(--black);
+  color: var(--green);
+  overflow-x: hidden;
+  line-height: 1.5;
+}
+
+/* CRT scanlines */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0,0,0,0) 0px,
+    rgba(0,0,0,0) 1px,
+    rgba(0,0,0,0.25) 1px,
+    rgba(0,0,0,0.25) 2px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* CRT flicker */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,255,65,0.03);
+  pointer-events: none;
+  z-index: 9998;
+  animation: flicker 0.15s infinite;
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.97; }
+}
+
+/* Matrix rain canvas */
+#matrix {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+/* Nav */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  background: rgba(0,0,0,0.9);
+  border-bottom: 1px solid var(--green);
+  padding: 12px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 0 20px rgba(0,255,65,0.1);
+}
+
+nav .logo {
+  font-size: 20px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: var(--green);
+  text-shadow: 0 0 10px var(--green);
+}
+
+nav .logo .prompt { color: var(--green-dim); }
+
+nav ul {
+  display: flex;
+  list-style: none;
+  gap: 25px;
+}
+
+nav a {
+  color: var(--green);
+  text-decoration: none;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+nav a:hover {
+  color: var(--amber);
+  text-shadow: 0 0 8px var(--amber);
+}
+
+/* Container */
+.container {
+  position: relative;
+  z-index: 1;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 30px;
+}
+
+/* Boot sequence */
+.boot {
+  padding-top: 80px;
+  padding-bottom: 20px;
+  font-size: 14px;
+  color: var(--green-dim);
+}
+
+.boot .line {
+  opacity: 0;
+  animation: boot-appear 0.05s forwards;
+}
+
+.boot .line:nth-child(1) { animation-delay: 0.1s; }
+.boot .line:nth-child(2) { animation-delay: 0.3s; }
+.boot .line:nth-child(3) { animation-delay: 0.5s; }
+.boot .line:nth-child(4) { animation-delay: 0.7s; }
+.boot .line:nth-child(5) { animation-delay: 0.9s; }
+.boot .line:nth-child(6) { animation-delay: 1.1s; }
+
+@keyframes boot-appear {
+  to { opacity: 1; }
+}
+
+/* Hero */
+.hero {
+  min-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 40px 0;
+}
+
+.ascii-logo {
+  font-family: 'VT323', monospace;
+  font-size: 13px;
+  line-height: 1.1;
+  color: var(--green);
+  text-shadow: 0 0 15px var(--green), 0 0 30px rgba(0,255,65,0.3);
+  white-space: pre;
+  margin-bottom: 30px;
+  overflow-x: auto;
+}
+
+.hero h1 {
+  font-size: 48px;
+  font-weight: normal;
+  color: var(--green);
+  text-shadow: 0 0 20px var(--green);
+  margin-bottom: 10px;
+}
+
+.hero .tagline {
+  font-size: 20px;
+  color: var(--amber);
+  text-shadow: 0 0 10px var(--amber);
+  margin-bottom: 25px;
+}
+
+.hero .desc {
+  font-size: 16px;
+  max-width: 700px;
+  color: var(--green-dim);
+  margin-bottom: 35px;
+}
+
+.hero .desc .var { color: var(--green); }
+
+/* Typewriter cursor */
+.cursor {
+  display: inline-block;
+  width: 10px;
+  height: 18px;
+  background: var(--green);
+  animation: blink 1s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Command prompt */
+.cmd-prompt {
+  color: var(--amber);
+  margin-bottom: 30px;
+  font-size: 15px;
+}
+
+.cmd-prompt .user { color: var(--green); }
+.cmd-prompt .at { color: var(--green-dim); }
+.cmd-prompt .path { color: var(--green-dim); }
+.cmd-prompt .dollar { color: var(--red); }
+
+/* CTA */
+.cta {
+  display: inline-block;
+  padding: 14px 36px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 16px;
+  color: var(--black);
+  background: var(--green);
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 0 20px rgba(0,255,65,0.3);
+}
+
+.cta:hover {
+  background: var(--amber);
+  box-shadow: 0 0 30px var(--amber), 0 0 60px rgba(255,176,0,0.3);
+}
+
+.cta::before { content: '▶ '; }
+.cta::after { content: ' ◀'; }
+
+/* Section */
+section {
+  padding: 60px 0;
+  position: relative;
+  z-index: 1;
+}
+
+.section-header {
+  font-size: 22px;
+  color: var(--amber);
+  margin-bottom: 30px;
+  text-shadow: 0 0 8px rgba(255,176,0,0.3);
+}
+
+.section-header .prompt { color: var(--green-dim); }
+.section-header .cmd { color: var(--green); }
+.section-header .cursor-sm {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  background: var(--green);
+  animation: blink 1s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+}
+
+/* Features */
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.feature {
+  background: rgba(0,26,8,0.6);
+  border: 1px solid var(--green-dim);
+  padding: 25px;
+  position: relative;
+  transition: all 0.3s;
+}
+
+.feature:hover {
+  border-color: var(--green);
+  box-shadow: 0 0 15px rgba(0,255,65,0.15);
+}
+
+.feature .id {
+  font-size: 12px;
+  color: var(--green-dim);
+  margin-bottom: 8px;
+}
+
+.feature h3 {
+  font-size: 16px;
+  color: var(--green);
+  text-shadow: 0 0 5px rgba(0,255,65,0.3);
+  margin-bottom: 10px;
+  font-weight: normal;
+}
+
+.feature p {
+  font-size: 13px;
+  color: var(--green-dim);
+  line-height: 1.6;
+}
+
+.feature .tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--green-dim);
+  color: var(--green);
+  margin-top: 10px;
+}
+
+/* How it works */
+.pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  align-items: stretch;
+}
+
+.pipe-step {
+  flex: 1;
+  min-width: 180px;
+  max-width: 220px;
+  border: 1px solid var(--green-dim);
+  padding: 20px;
+  position: relative;
+}
+
+.pipe-step .step-num {
+  font-size: 28px;
+  color: var(--red);
+  text-shadow: 0 0 10px var(--red);
+}
+
+.pipe-step h4 {
+  font-size: 15px;
+  color: var(--amber);
+  margin: 8px 0;
+  font-weight: normal;
+}
+
+.pipe-step p {
+  font-size: 12px;
+  color: var(--green-dim);
+}
+
+.pipe-step .arrow {
+  position: absolute;
+  right: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--green);
+  font-size: 20px;
+  z-index: 2;
+}
+
+.pipe-step:last-child .arrow { display: none; }
+
+/* Tech stack */
+.tech-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tech-item {
+  padding: 8px 20px;
+  border: 1px solid var(--green-dim);
+  font-size: 13px;
+  color: var(--green);
+  transition: all 0.2s;
+  cursor: default;
+}
+
+.tech-item:hover {
+  border-color: var(--green);
+  background: rgba(0,255,65,0.05);
+  text-shadow: 0 0 8px var(--green);
+}
+
+/* CTA section */
+.deploy-section {
+  text-align: center;
+  padding: 80px 0;
+}
+
+.deploy-section h2 {
+  font-size: 32px;
+  color: var(--green);
+  text-shadow: 0 0 15px var(--green);
+  margin-bottom: 20px;
+  font-weight: normal;
+}
+
+.deploy-section .desc {
+  font-size: 16px;
+  color: var(--green-dim);
+  margin-bottom: 30px;
+}
+
+.code-block {
+  display: inline-block;
+  margin-top: 25px;
+  padding: 15px 30px;
+  background: rgba(0,26,8,0.8);
+  border: 1px solid var(--green);
+  font-size: 15px;
+  color: var(--amber);
+  box-shadow: 0 0 20px rgba(0,255,65,0.15);
+}
+
+.code-block .prompt { color: var(--green-dim); }
+.code-block .cmd { color: var(--green); }
+
+/* Glitch text */
+.glitch {
+  position: relative;
+  display: inline-block;
+}
+
+.glitch:hover::before,
+.glitch:hover::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+}
+
+.glitch:hover::before {
+  color: var(--red);
+  animation: glitch-1 0.3s infinite;
+  clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%);
+}
+
+.glitch:hover::after {
+  color: var(--amber);
+  animation: glitch-2 0.3s infinite;
+  clip-path: polygon(0 67%, 100% 67%, 100% 100%, 0 100%);
+}
+
+@keyframes glitch-1 {
+  0%, 100% { transform: translate(0); }
+  50% { transform: translate(-3px, 1px); }
+}
+
+@keyframes glitch-2 {
+  0%, 100% { transform: translate(0); }
+  50% { transform: translate(3px, -1px); }
+}
+
+/* Footer */
+footer {
+  position: relative;
+  z-index: 1;
+  border-top: 1px solid var(--green-dim);
+  padding: 30px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--green-dim);
+}
+
+footer .brand {
+  color: var(--green);
+  text-shadow: 0 0 8px var(--green);
+  margin-bottom: 8px;
+}
+
+/* Status bar */
+.status-bar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: rgba(0,0,0,0.9);
+  border-top: 1px solid var(--green-dim);
+  padding: 4px 20px;
+  font-size: 12px;
+  color: var(--green-dim);
+  display: flex;
+  justify-content: space-between;
+  z-index: 100;
+}
+
+.status-bar .left { color: var(--green); }
+.status-bar .right { color: var(--amber); }
+
+@media (max-width: 768px) {
+  nav ul { display: none; }
+  .ascii-logo { font-size: 8px; }
+  .pipe-step .arrow { display: none; }
+}
+</style>
+</head>
+<body>
+
+<canvas id="matrix"></canvas>
+
+<nav>
+  <div class="logo"><span class="prompt">root@ferrite:~#</span> FERRITE</div>
+  <ul>
+    <li><a href="#features">[features]</a></li>
+    <li><a href="#how">[how]</a></li>
+    <li><a href="#stack">[stack]</a></li>
+    <li><a href="#deploy">[deploy]</a></li>
+  </ul>
+</nav>
+
+<div class="container">
+
+<div class="boot">
+  <div class="line">FERRITE v1.0.0 — Kassett Memory Systems</div>
+  <div class="line">Initializing temporal knowledge graph... [OK]</div>
+  <div class="line">Loading Neo4j driver... [OK]</div>
+  <div class="line">Connecting to extraction LLM (DS-V4-Flash)... [OK]</div>
+  <div class="line">Loading nomic-embed-text-v1.5... [OK]</div>
+  <div class="line">System ready. Awaiting input.</div>
+</div>
+
+<section class="hero">
+  <div class="ascii-logo">  ███████ ███████ ███████  █████  ███████ ███████ ██   ██
+  ████   ████    ██      ██   ██ ██      ██      ██  ██
+  ██████  ██████  ██████  ███████ █████   ███████ █████
+  ████       ████ ██      ██   ██ ██           ██ ██  ██
+  ███████ ███████ ███████ ██   ██ ███████ ███████ ██   ██</div>
+  <div class="cmd-prompt">
+    <span class="user">root</span><span class="at">@</span>ferrite<span class="path">:~$</span> <span class="dollar">./ferrite --init</span>
+  </div>
+  <h1><span class="glitch" data-text="PERSISTENT MEMORY">PERSISTENT MEMORY</span></h1>
+  <div class="tagline">> Persistent memory for autonomous AI agents</div>
+  <p class="desc">A temporal knowledge graph that gives AI agents long-term memory. Agents forget nothing — every conversation, document, and research paper becomes queryable knowledge.<span class="cursor"></span></p>
+  <a href="#deploy" class="cta">DEPLOY IN 5 MINUTES</a>
+</section>
+
+<section id="features">
+  <div class="section-header"><span class="prompt">root@ferrite:~#</span> <span class="cmd">cat features.list</span><span class="cursor-sm"></span></div>
+  <div class="features">
+    <div class="feature">
+      <div class="id">[PID:001]</div>
+      <h3>TEMPORAL KNOWLEDGE GRAPH</h3>
+      <p>Every fact is timestamped with valid_at and invalid_at. Track how knowledge changes over time. Built on Neo4j for deep graph traversal.</p>
+      <span class="tag">neo4j</span>
+    </div>
+    <div class="feature">
+      <div class="id">[PID:002]</div>
+      <h3>OBSERVATION CONSOLIDATION</h3>
+      <p>Raw facts auto-consolidate into evidence-backed beliefs. Proof counts, evidence chains, and staleness tracking. Adopted from Hindsight research.</p>
+      <span class="tag">hindsight</span>
+    </div>
+    <div class="feature">
+      <div class="id">[PID:003]</div>
+      <h3>TEMPR RETRIEVAL</h3>
+      <p>Four parallel search strategies: semantic, BM25, graph, temporal. Fused with Reciprocal Rank Fusion. 2s per-strategy timeout.</p>
+      <span class="tag">rrf</span>
+    </div>
+    <div class="feature">
+      <div class="id">[PID:004]</div>
+      <h3>MULTI-AGENT NAMESPACES</h3>
+      <p>Each agent gets isolated namespaces. Shared knowledge where you want it, private where you need it. Policy enforced at query layer.</p>
+      <span class="tag">isolated</span>
+    </div>
+    <div class="feature">
+      <div class="id">[PID:005]</div>
+      <h3>SELF-HOSTED EXTRACTION</h3>
+      <p>DS-V4-Flash runs on your hardware. Zero API cost. Zero data leaving your network. Full sovereignty over the extraction pipeline.</p>
+      <span class="tag">zero-cost</span>
+    </div>
+    <div class="feature">
+      <div class="id">[PID:006]</div>
+      <h3>FILE STORAGE</h3>
+      <p>Store actual files — PDFs, code, web archives, voice transcripts. SHA-256 dedup, chunked embeddings, re-extractable from canonical source.</p>
+      <span class="tag">sha-256</span>
+    </div>
+    <div class="feature">
+      <div class="id">[PID:007]</div>
+      <h3>PLUGGABLE VECTOR STORE</h3>
+      <p>Start with Neo4j's built-in vector index. Swap to Qdrant when you hit scale. Same API, zero code changes. VectorStore is an ABC.</p>
+      <span class="tag">qdrant</span>
+    </div>
+    <div class="feature">
+      <div class="id">[PID:008]</div>
+      <h3>MCP NATIVE</h3>
+      <p>Agents connect via Model Context Protocol. No system prompt hacking. No fine-tuning. Just store() and search().</p>
+      <span class="tag">mcp</span>
+    </div>
+    <div class="feature">
+      <div class="id">[PID:009]</div>
+      <h3>TIER FRESHNESS DECAY</h3>
+      <p>Older facts rank lower in retrieval. Tier 1 (fresh) full weight, Tier 3 (6mo+) gets 0.25x. Adopted from Mnemosyne.</p>
+      <span class="tag">mnemosyne</span>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="section-header"><span class="prompt">root@ferrite:~#</span> <span class="cmd">./ferrite --trace pipeline</span><span class="cursor-sm"></span></div>
+  <div class="pipeline">
+    <div class="pipe-step">
+      <span class="step-num">01</span>
+      <h4>STORE</h4>
+      <p>Agents store conversations and documents via MCP. Session transcripts, PDFs, code — all ingested through a single API.</p>
+      <span class="arrow">→</span>
+    </div>
+    <div class="pipe-step">
+      <span class="step-num">02</span>
+      <h4>EXTRACT</h4>
+      <p>LLM extracts entities, facts, relationships. Validated against JSON schema before writing to Neo4j. No hallucinated nodes.</p>
+      <span class="arrow">→</span>
+    </div>
+    <div class="pipe-step">
+      <span class="step-num">03</span>
+      <h4>CONSOLIDATE</h4>
+      <p>Related facts merge into observations — evidence-backed beliefs with proof counts. Staleness tracking flags outdated beliefs.</p>
+      <span class="arrow">→</span>
+    </div>
+    <div class="pipe-step">
+      <span class="step-num">04</span>
+      <h4>RETRIEVE</h4>
+      <p>TEMPR fuses 4 search strategies with RRF. Mental models first, then observations, then raw facts. Tier decay weights by freshness.</p>
+    </div>
+  </div>
+</section>
+
+<section id="stack">
+  <div class="section-header"><span class="prompt">root@ferrite:~#</span> <span class="cmd">cat /etc/ferrite/stack.conf</span><span class="cursor-sm"></span></div>
+  <div class="tech-list">
+    <div class="tech-item">Neo4j 5.x</div>
+    <div class="tech-item">Redis</div>
+    <div class="tech-item">FastAPI</div>
+    <div class="tech-item">Next.js</div>
+    <div class="tech-item">DS-V4-Flash</div>
+    <div class="tech-item">nomic-embed-v1.5</div>
+    <div class="tech-item">Docker Compose</div>
+  </div>
+</section>
+
+<section id="deploy" class="deploy-section">
+  <div class="section-header"><span class="prompt">root@ferrite:~#</span> <span class="cmd">./deploy.sh</span><span class="cursor-sm"></span></div>
+  <h2>READY TO DEPLOY?</h2>
+  <p class="desc">One command. Zero config. Your agents never forget again.</p>
+  <a href="#" class="cta">GET STARTED</a>
+  <div class="code-block"><span class="prompt">root@ferrite:~$</span> <span class="cmd">docker compose up</span></div>
+</section>
+
+</div>
+
+<footer>
+  <div class="brand">FERRITE :: KASSETT MEMORY SYSTEMS</div>
+  <p>Persistent memory for autonomous AI agents · Self-hosted · Open source</p>
+</footer>
+
+<div class="status-bar">
+  <span class="left">● FERRITE v1.0.0 — ONLINE</span>
+  <span class="right">MEM: 3GB/24GB · NEO4J: OK · LLM: OK</span>
+</div>
+
+<script>
+// Matrix rain effect
+const canvas = document.getElementById('matrix');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const chars = '01░▒▓█FERRITEKASSETT{}/[]<>+=-#$@*';
+const fontSize = 14;
+const columns = Math.floor(canvas.width / fontSize);
+const drops = Array(columns).fill(1);
+
+function draw() {
+  ctx.fillStyle = 'rgba(0,0,0,0.05)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#00ff41';
+  ctx.font = fontSize + 'px monospace';
+  for (let i = 0; i < drops.length; i++) {
+    const text = chars[Math.floor(Math.random() * chars.length)];
+    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+    drops[i]++;
+  }
+}
+setInterval(draw, 50);
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
+</script>
+
+</body>
+</html>
