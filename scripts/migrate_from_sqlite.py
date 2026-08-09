@@ -278,7 +278,8 @@ def migrate(
                         "RETURN count(f) AS c",
                         ep_id=ep.id,
                     )
-                    fact_count = result.single()["c"]
+                    record = result.single()
+                    fact_count = record["c"] if record else 0
 
                 stats["episodes_created"] += 1
                 stats["facts_written"] += fact_count

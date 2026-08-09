@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ferrite",
+  "version": "1.0.0",
+  "description": "Temporal knowledge graph memory backed by Neo4j. LLM extraction, fulltext search, multi-hop traversal, and temporal logic (supersession/contradiction).",
+  "author": {
+    "name": "Chris Fontes",
+    "url": "https://github.com/fattchris"
+  },
+  "homepage": "https://github.com/fattchris/ferrite",
+  "repository": "https://github.com/fattchris/ferrite",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "knowledge-graph",
+    "neo4j",
+    "temporal",
+    "llm",
+    "agent"
+  ]
+}

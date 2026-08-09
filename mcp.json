@@ -1,0 +1,26 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "ferrite": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "${PLUGIN_ROOT}",
+        "python",
+        "-m",
+        "ferrite.mcp_server"
+      ],
+      "env": {
+        "NEO4J_URI": "bolt://localhost:7687",
+        "NEO4J_USER": "neo4j",
+        "NEO4J_PASSWORD": "${NEO4J_PASSWORD}",
+        "REDIS_URL": "redis://localhost:6379",
+        "LITELLM_BASE_URL": "http://localhost:4000/v1",
+        "LITELLM_API_KEY": "${LITELLM_API_KEY}",
+        "LLM_MODEL": "glm-5.2"
+      }
+    }
+  }
+}
