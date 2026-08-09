@@ -54,30 +54,40 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml",
     with run.phase(PhaseParams(name="write_files", kind="code", owner="system",
                                description="Write builder's file contents to disk")) as ph:
         files_written = []
-        # The builder's notes_for_next_agent should contain a JSON array of {path, content}
         notes = previous.notes_for_next_agent or ""
-        try:
-            start = notes.find("[")
-            end = notes.rfind("]")
-            if start != -1 and end > start:
-                files = json.loads(notes[start:end + 1])
-                for f in files:
-                    path = f.get("path", "")
-                    content = f.get("content", "")
-                    if path and content:
-                        full_path = Path(run.repo_root) / path
-                        full_path.parent.mkdir(parents=True, exist_ok=True)
-                        full_path.write_text(content)
-                        files_written.append(path)
-                        ph.log(file=path, lines=content.count("\n") + 1)
-        except (json.JSONDecodeError, KeyError) as e:
-            ph.log(error=f"Failed to parse files from builder: {e}")
-            ph.log(raw_notes=notes[:500])
+
+        # Parse FILE DELIMITER format: <<<FILE: path>>> content <<<END_FILE>>>
+        import re
+        pattern = re.compile(r'<<<FILE:\s*(.+?)>>>\n(.*?)<<<END_FILE>>>', re.DOTALL)
+        for m in pattern.finditer(notes):
+            path = m.group(1).strip()
+            content = m.group(2)
+            if path and content:
+                full_path = Path(run.repo_root) / path
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                full_path.write_text(content)
+                files_written.append(path)
+                ph.log(file=path, lines=content.count("\n") + 1)
 
         if not files_written:
-            # Try changed_files field
-            for path in (previous.changed_files or []):
-                files_written.append(path)
+            # Fallback: try JSON array format (legacy)
+            try:
+                start = notes.find("[")
+                end = notes.rfind("]")
+                if start != -1 and end > start:
+                    files = json.loads(notes[start:end + 1])
+                    for f in files:
+                        path = f.get("path", "")
+                        content = f.get("content", "")
+                        if path and content:
+                            full_path = Path(run.repo_root) / path
+                            full_path.parent.mkdir(parents=True, exist_ok=True)
+                            full_path.write_text(content)
+                            files_written.append(path)
+                            ph.log(file=path, lines=content.count("\n") + 1)
+            except (json.JSONDecodeError, KeyError) as e:
+                ph.log(error=f"Failed to parse files from builder: {e}")
+                ph.log(raw_notes=notes[:500])
 
         ph.log(files_written=files_written)
 
@@ -110,21 +120,34 @@ def main(prompt: str, config: str = "adws/adw_sssf_config/sssf.config.yaml",
         with run.phase(PhaseParams(name=f"write_fix_{i}", kind="code", owner="system",
                                    description=f"Write fixed files (attempt {i})")) as ph:
             notes = previous.notes_for_next_agent or ""
-            try:
-                start = notes.find("[")
-                end = notes.rfind("]")
-                if start != -1 and end > start:
-                    files = json.loads(notes[start:end + 1])
-                    for f in files:
-                        path = f.get("path", "")
-                        content = f.get("content", "")
-                        if path and content:
-                            full_path = Path(run.repo_root) / path
-                            full_path.parent.mkdir(parents=True, exist_ok=True)
-                            full_path.write_text(content)
-                            ph.log(file=path, fixed=True)
-            except (json.JSONDecodeError, KeyError) as e:
-                ph.log(error=f"Failed to parse fix files: {e}")
+            # Parse FILE DELIMITER format
+            import re
+            pattern = re.compile(r'<<<FILE:\s*(.+?)>>>\n(.*?)<<<END_FILE>>>', re.DOTALL)
+            for m in pattern.finditer(notes):
+                path = m.group(1).strip()
+                content = m.group(2)
+                if path and content:
+                    full_path = Path(run.repo_root) / path
+                    full_path.parent.mkdir(parents=True, exist_ok=True)
+                    full_path.write_text(content)
+                    ph.log(file=path, fixed=True)
+            # Fallback: JSON array
+            if not any(True for _ in pattern.finditer(notes)):
+                try:
+                    start = notes.find("[")
+                    end = notes.rfind("]")
+                    if start != -1 and end > start:
+                        files = json.loads(notes[start:end + 1])
+                        for f in files:
+                            path = f.get("path", "")
+                            content = f.get("content", "")
+                            if path and content:
+                                full_path = Path(run.repo_root) / path
+                                full_path.parent.mkdir(parents=True, exist_ok=True)
+                                full_path.write_text(content)
+                                ph.log(file=path, fixed=True)
+                except (json.JSONDecodeError, KeyError) as e:
+                    ph.log(error=f"Failed to parse fix files: {e}")
 
     # Phase 6: Commit
     verified = (quality_result is not None and quality_result.passed
