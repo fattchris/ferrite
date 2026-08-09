@@ -1,229 +1,340 @@
-"""Ingestion pipeline: queue episodes, extract, canonicalize, and write to Neo4j.""""
+"""Ingestion pipeline: queue, extract, canonicalize, write to Neo4j."""
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime
+from typing import Callable, Optional
 
-import redis.asyncio as aioredis
-from neo4j import Driver
+import redis
+from neo4j import GraphDatabase
 
-from ferrite.canonicalize import get_or_create_entity
-from ferrite.config import get_settings
-from ferrite.extractor import extract, generate_statement
-from ferrite.models import Episode, Namespace
-from ferrite.temporal import apply_supersession
-from ferrite.vocab import is_functional
+from .canonicalize import resolve_entity
+from .extractor import extract, normalize_literal
+from .models import Episode, FactBase
+from .temporal import (
+    apply_contradiction,
+    apply_supersession,
+    detect_contradiction,
+    detect_supersession,
+)
+from .vocab import is_functional, is_valid_predicate
 
 logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ferrite:ingestion:queue"
+EPISODE_KEY_PREFIX = "ferrite:episode:"
 
 
-async def queue_episode(
-    redis: aioredis.Redis,
-    content: str,
-    content_type: str,
-    source: dict,
-    namespace: str = None,
-) -> dict:
-    """Queue an episode for ingestion. Returns episode_id and status.""""
-    settings = get_settings()
-    ns = namespace or settings.NAMESPACE_DEFAULT
-    episode = Episode(
-        content=content,
-        content_type=content_type,
-        source=source,
-        namespace=Namespace(ns)
-    )
-    await redis.lpush(QUEUE_KEY, episode.model_dump_json())
-    return {"episode_id": episode.id, "status": "queued"}
+class IngestionPipeline:
+    """Manages the ingestion queue and processing pipeline."""
 
+    def __init__(
+        self,
+        redis_url: str,
+        neo4j_uri: str,
+        neo4j_user: str,
+        neo4j_password: str,
+        embedding_func: Optional[Callable] = None,
+        llm_client: Optional[Callable] = None,
+    ):
+        self.redis_client = redis.from_url(redis_url)
+        self.driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
+        self.embedding_func = embedding_func
+        self.llm_client = llm_client
 
-async def process_episode(redis: aioredis.Redis, driver: Driver) -> Optional[dict]:
-    """Pop and process a single episode from the queue."""""
-    raw = await redis.rpop(QUEUE_KEY)
-    if not raw:
-        return None
+    def enqueue(self, episode: Episode) -> str:
+        """Queue an episode for ingestion. Returns the episode_id."""
+        episode_data = episode.model_dump_json()
+        self.redis_client.hset(
+            f"{EPISODE_KEY_PREFIX}{episode.id}", "data", episode_data
+        )
+        self.redis_client.lpush(QUEUE_KEY, episode.id)
+        logger.info(f"Enqueued episode {episode.id}")
+        return episode.id
 
-    episode = Episode.model_validate_json(raw)
-    try:
-        result = await extract(episode.content, episode.content_type)
-        return await _write_to_graph(driver, episode, result)
-    except Exception as e:
-        logger.error(f"Failed to process episode {episode.id}: {e}")
-        return {"episode_id": episode.id, "status": "failed", "error": str(e)}
+    def get_queue_depth(self) -> int:
+        """Return the number of episodes in the queue."""
+        return self.redis_client.llen(QUEUE_KEY)
 
+    def process_next(self) -> Optional[str]:
+        """Process the next episode in the queue. Returns episode_id or None."""
+        episode_id = self.redis_client.rpop(QUEUE_KEY)
+        if episode_id is None:
+            return None
 
-async def _write_to_graph(driver: Driver, episode: Episode, result) -> dict:
-    """Write extracted entities and facts to Neo4j.""""
-    # 1. Create/resolve entities
-    entity_map: dict[str, dict] = {}
-    for ent in result.entities:
-        e = get_or_create_entity(driver, ent.name, ent.type, ent.summary)
-        entity_map[ent.name] = e
+        episode_id = episode_id.decode() if isinstance(episode_id, bytes) else episode_id
+        self.process_episode(episode_id)
+        return episode_id
 
-    # 2. Create episode node
-    _create_episode_node(driver, episode)
+    def process_episode(self, episode_id: str) -> None:
+        """Process a single episode: extract -> canonicalize -> write to Neo4j."""
+        # Load episode from Redis
+        raw = self.redis_client.hget(f"{EPISODE_KEY_PREFIX}{episode_id}", "data")
+        if raw is None:
+            logger.error(f"Episode {episode_id} not found in Redis")
+            return
 
-    facts_written = 0
-    for ef in result.facts:
-        # Resolve subject entity
-        if ef.subject not in entity_map:
-            entity_map[ef.subject] = get_or_create_entity(driver, ef.subject)
+        raw = raw.decode() if isinstance(raw, bytes) else raw
+        episode = Episode.model_validate_json(raw)
 
-        subject_entity = entity_map[ef.subject]
+        logger.info(f"Processing episode {episode.id}")
 
-        # Resolve object if entity
-        if ef.object_type == "entity":
-            if ef.object not in entity_map:
-                entity_map[ef.object] = get_or_create_entity(driver, ef.object)
-            obj_entity = entity_map[ef.object]
-            obj_value = obj_entity["name"]
+        # Step 1: Extract entities and facts via LLM
+        extraction = extract(episode.content, self.llm_client)
+
+        # Step 2: Canonicalize entities
+        entity_cache: dict[str, object] = {}
+        for ent_data in extraction.get("entities", []):
+            name = ent_data["name"]
+            if name not in entity_cache:
+                entity = resolve_entity(
+                    self.driver,
+                    name,
+                    self.embedding_func,
+                    entity_type=ent_data.get("type", "entity"),
+                    summary=ent_data.get("summary"),
+                )
+                entity_cache[name] = entity
+
+        # Also canonicalize subjects and objects referenced in facts
+        for fact_data in extraction.get("facts", []):
+            subj_name = fact_data["subject"]
+            if subj_name not in entity_cache:
+                entity = resolve_entity(
+                    self.driver, subj_name, self.embedding_func
+                )
+                entity_cache[subj_name] = entity
+
+            if fact_data.get("object_type") == "entity":
+                obj_name = fact_data["object"]
+                if obj_name not in entity_cache:
+                    entity = resolve_entity(
+                        self.driver, obj_name, self.embedding_func
+                    )
+                    entity_cache[obj_name] = entity
+
+        # Step 3: Write facts to Neo4j with temporal logic
+        for fact_data in extraction.get("facts", []):
+            self._write_fact_with_temporal(episode, fact_data, entity_cache)
+
+        logger.info(f"Completed processing episode {episode.id}")
+
+    def _write_fact_with_temporal(
+        self,
+        episode: Episode,
+        fact_data: dict,
+        entity_cache: dict,
+    ) -> None:
+        """Write a single fact to Neo4j, applying temporal logic."""
+        predicate = fact_data["predicate"]
+        if not is_valid_predicate(predicate):
+            logger.warning(f"Skipping fact with invalid predicate: {predicate}")
+            return
+
+        subject_entity = entity_cache.get(fact_data["subject"])
+        if subject_entity is None:
+            logger.warning(
+                f"Subject entity not found for: {fact_data['subject']}"
+            )
+            return
+
+        # Determine valid_at
+        if fact_data.get("valid_at"):
+            try:
+                valid_at = datetime.fromisoformat(fact_data["valid_at"])
+                valid_at_inferred = False
+            except (ValueError, TypeError):
+                valid_at = episode.recorded_at
+                valid_at_inferred = True
         else:
-            obj_entity = None
-            obj_value = ef.object
+            valid_at = episode.recorded_at
+            valid_at_inferred = True
 
-        statement = generate_statement(subject_entity["name"], ef.predicate, obj_value)
-        now = datetime.now(timezone.utc)
-        valid_at = ef.valid_at or now
-        valid_at_inferred = ef.valid_at is None
+        # Determine object
+        object_type = fact_data.get("object_type", "entity")
+        object_value = fact_data["object"]
+        if object_type == "literal":
+            object_value = normalize_literal(object_value)
 
-        fact_id = _create_fact(
-            driver,
-            predicate=ef.predicate,
+        # Build the canonical statement
+        statement = f"{fact_data['subject']} {predicate} {object_value}"
+
+        # Create the Fact object
+        fact = FactBase(
+            predicate=predicate,
             statement=statement,
-            functional=is_functional(ef.predicate),
-            certainty=ef.certainty,
-            assertion_source=ef.assertion_source,
+            functional=is_functional(predicate),
+            certainty=fact_data.get("certainty", "stated"),
+            assertion_source=fact_data.get("assertion_source", "model"),
             valid_at=valid_at,
             valid_at_inferred=valid_at_inferred,
             namespace=episode.namespace,
-            subject_id=subject_entity["id"],
-            object_value=obj_value if not obj_entity else None,
-            object_entity_id=obj_entity["id"] if obj_entity else None,
-            episode_id=episode.id,
-            negation=ef.negation,
+            recorded_at=episode.recorded_at,
         )
 
-        # Apply supersession logic
-        apply_supersession(
-            driver,
-            subject_id=subject_entity["id"],
-            predicate=ef.predicate,
-            new_fact_id=fact_id,
-            new_object=obj_value,
-            new_valid_at=valid_at,
-            namespace=episode.namespace,
-            negation=ef.negation,
-        )
-        facts_written += 1
+        # Check for supersession (functional predicates only)
+        if is_functional(predicate):
+            old_fact = detect_supersession(
+                self.driver,
+                subject_entity.id,
+                predicate,
+                object_value,
+                object_type,
+                episode.namespace,
+            )
+            if old_fact:
+                # Write new fact first, then supersede old
+                self._write_fact(
+                    fact, subject_entity, object_value, object_type, episode
+                )
+                apply_supersession(
+                    self.driver, old_fact["id"], fact.id, valid_at
+                )
+                return
 
-    return {"episode_id": episode.id, "status": "processed", "facts_written": facts_written}
+        # Check for contradiction (negation flag)
+        if fact_data.get("negation", False):
+            existing_fact_id = detect_contradiction(
+                self.driver,
+                subject_entity.id,
+                predicate,
+                object_value,
+                True,
+                episode.namespace,
+            )
+            if existing_fact_id:
+                self._write_fact(
+                    fact, subject_entity, object_value, object_type, episode
+                )
+                apply_contradiction(self.driver, existing_fact_id, fact.id)
+                return
 
+        # Normal write
+        self._write_fact(fact, subject_entity, object_value, object_type, episode)
 
-def _create_episode_node(driver: Driver, episode: Episode):
-    query = """
-    CREATE (e:Episode {
-        id: $id,
-        content: $content,
-        content_type: $content_type,
-        source: $source,
-        namespace: $namespace,
-        created_at: $created_at
-    })
-    """
-    with driver.session() as session:
-        session.run(
-            query,
-            id=episode.id,
-            content=episode.content,
-            content_type=episode.content_type,
-            source=json.dumps(episode.source),
-            namespace=episode.namespace,
-            created_at=episode.created_at.isoformat(),
-        ).consume()
+    def _write_fact(
+        self,
+        fact: FactBase,
+        subject_entity,
+        object_value: str,
+        object_type: str,
+        episode: Episode,
+    ) -> None:
+        """Write a Fact node to Neo4j with SUBJECT, OBJECT, SOURCED_FROM edges."""
+        with self.driver.session() as session:
+            # Create Episode node if not exists
+            session.run(
+                """
+                MERGE (ep:Episode {id: $episode_id})
+                SET ep.content = $content,
+                    ep.content_type = $content_type,
+                    ep.source = $source,
+                    ep.namespace = $namespace,
+                    ep.recorded_at = $recorded_at
+                """,
+                episode_id=episode.id,
+                content=episode.content,
+                content_type=episode.content_type,
+                source=json.dumps(episode.source),
+                namespace=episode.namespace,
+                recorded_at=episode.recorded_at.isoformat(),
+            )
 
+            # Create Fact node
+            session.run(
+                """
+                CREATE (f:Fact {
+                    id: $id,
+                    predicate: $predicate,
+                    statement: $statement,
+                    functional: $functional,
+                    certainty: $certainty,
+                    epistemic_state: $epistemic_state,
+                    assertion_source: $assertion_source,
+                    valid_at: $valid_at,
+                    valid_at_inferred: $valid_at_inferred,
+                    invalid_at: $invalid_at,
+                    recorded_at: $recorded_at,
+                    namespace: $namespace
+                })
+                """,
+                id=fact.id,
+                predicate=fact.predicate,
+                statement=fact.statement,
+                functional=fact.functional,
+                certainty=fact.certainty,
+                epistemic_state=fact.epistemic_state,
+                assertion_source=fact.assertion_source,
+                valid_at=fact.valid_at.isoformat(),
+                valid_at_inferred=fact.valid_at_inferred,
+                invalid_at=None,
+                recorded_at=fact.recorded_at.isoformat(),
+                namespace=fact.namespace,
+            )
 
-def _create_fact(
-    driver: Driver,
-    predicate: str,
-    statement: str,
-    functional: bool,
-    certainty: str,
-    assertion_source: str,
-    valid_at: datetime,
-    valid_at_inferred: bool,
-    namespace: str,
-    subject_id: str,
-    object_value: Optional[str],
-    object_entity_id: Optional[str],
-    episode_id: str,
-    negation: bool,
-) -> str:
-    """Create Fact node with edges. Returns fact_id.""""
-    import uuid
-    fact_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
+            # Link subject
+            session.run(
+                """
+                MATCH (f:Fact {id: $fact_id}), (e:Entity {id: $entity_id})
+                CREATE (f)-[:SUBJECT]->(e)
+                """,
+                fact_id=fact.id,
+                entity_id=subject_entity.id,
+            )
 
-    query = """
-    CREATE (f:Fact {
-        id: $id,
-        predicate: $predicate,
-        statement: $statement,
-        functional: $functional,
-        certainty: $certainty,
-        epistemic_state: 'active',
-        assertion_source: $assertion_source,
-        valid_at: $valid_at,
-        valid_at_inferred: $valid_at_inferred,
-        invalid_at: null,
-        recorded_at: $recorded_at,
-        namespace: $namespace,
-        negation: $negation
-    })
-    WITH f
-    MATCH (s:Entity {id: $subject_id})
-    CREATE (f)-[:SUBJECT]->(s)
-    """""
+            # Link object
+            if object_type == "entity":
+                # Find the object entity and link it
+                session.run(
+                    """
+                    MATCH (f:Fact {id: $fact_id})
+                    MATCH (e:Entity {name: $obj_name})
+                    WITH f, e
+                    CREATE (f)-[:OBJECT]->(e)
+                    """,
+                    fact_id=fact.id,
+                    obj_name=object_value,
+                )
+            else:
+                # Create a literal node
+                session.run(
+                    """
+                    MATCH (f:Fact {id: $fact_id})
+                    CREATE (l:Literal {value: $value, type: 'literal'})
+                    CREATE (f)-[:OBJECT]->(l)
+                    """,
+                    fact_id=fact.id,
+                    value=object_value,
+                )
 
-    with driver.session() as session:
-        session.run(
-            query,
-            id=fact_id,
-            predicate=predicate,
-            statement=statement,
-            functional=functional,
-            certainty=certainty,
-            assertion_source=assertion_source,
-            valid_at=valid_at.isoformat(),
-            valid_at_inferred=valid_at_inferred,
-            recorded_at=now.isoformat(),
-            namespace=namespace,
-            subject_id=subject_id,
-            negation=negation,
-        ).consume()
+            # Link provenance
+            session.run(
+                """
+                MATCH (f:Fact {id: $fact_id}), (ep:Episode {id: $episode_id})
+                CREATE (f)-[:SOURCED_FROM]->(ep)
+                """,
+                fact_id=fact.id,
+                episode_id=episode.id,
+            )
 
-        # Object edge
-        if object_entity_id:
-            obj_query = """
-            MATCH (f:Fact {id: $fact_id}), (o:Entity {id: $obj_id})
-            CREATE (f)-[:OBJECT]->(o)
-            """""
-            session.run(obj_query, fact_id=fact_id, obj_id=object_entity_id).consume()
-        elif object_value is not None:
-            obj_query = """
-            MATCH (f:Fact {id: $fact_id})
-            CREATE (l:Literal {value: $value, type: 'string'})
-            CREATE (f)-[:OBJECT]->(l)
-            """""
-            session.run(obj_query, fact_id=fact_id, value=object_value).consume()
+            # Create observation and link
+            import uuid
+            obs_id = str(uuid.uuid4())
+            session.run(
+                """
+                CREATE (o:Observation {id: $obs_id, episode_id: $episode_id, fact_id: $fact_id})
+                WITH o
+                MATCH (f:Fact {id: $fact_id})
+                CREATE (o)-[:SUPPORTS]->(f)
+                """,
+                obs_id=obs_id,
+                episode_id=episode.id,
+                fact_id=fact.id,
+            )
 
-        # Sourced from episode
-        ep_query = """
-            MATCH (f:Fact {id: $fact_id}), (e:Episode {id: $ep_id})
-            CREATE (f)-[:SOURCED_FROM]->(e)
-            """""
-        session.run(ep_query, fact_id=fact_id, ep_id=episode_id).consume()
+        logger.info(f"Wrote fact {fact.id}: {fact.statement}")
 
-    return fact_id
+    def close(self) -> None:
+        """Close connections."""
+        self.driver.close()
+        self.redis_client.close()

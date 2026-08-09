@@ -1,124 +1,244 @@
-"""Temporal supersession and contradiction detection logic.""""
+"""Temporal logic: supersession and contradiction detection for Facts."""
 
+import logging
 from datetime import datetime
 from typing import Optional
 
-from neo4j import Driver
+logger = logging.getLogger(__name__)
 
-from ferrite.vocab import is_functional
+
+def detect_supersession(
+    driver,
+    subject_id: str,
+    predicate: str,
+    new_object: str,
+    new_object_type: str,
+    namespace: str,
+) -> Optional[dict]:
+    """Detect if an existing active Fact should be superseded.
+
+    For functional predicates: if there is an existing active Fact with the same
+    (subject, predicate) but a different object, the old fact should be superseded.
+
+    Returns the old fact dict (id, object, valid_at) if supersession is needed,
+    else None.
+    """
+    with driver.session() as session:
+        result = session.run(
+            """
+            MATCH (e:Entity {id: $subject_id})<-[:SUBJECT]-(f:Fact)
+            WHERE f.predicate = $predicate
+              AND f.epistemic_state = 'active'
+              AND f.invalid_at IS NULL
+              AND f.namespace = $namespace
+            RETURN f.id AS id, f.statement AS statement, f.valid_at AS valid_at,
+                   f.namespace AS namespace
+            """,
+            subject_id=subject_id,
+            predicate=predicate,
+            namespace=namespace,
+        )
+        records = [r for r in result]
+
+    if not records:
+        return None
+
+    # For functional predicates, check if any existing fact has a different object
+    for record in records:
+        # We need to check the object. Fetch it.
+        with driver.session() as session:
+            obj_result = session.run(
+                """
+                MATCH (f:Fact {id: $fact_id})-[:OBJECT]->(target)
+                RETURN COALESCE(target.name, target.value) AS obj_value
+                """,
+                fact_id=record["id"],
+            )
+            obj_record = obj_result.single()
+
+        existing_object = obj_record["obj_value"] if obj_record else None
+
+        if existing_object != new_object:
+            logger.info(
+                f"Supersession detected: fact {record['id']} has different "
+                f"object ('{existing_object}' vs '{new_object}')"
+            )
+            return {
+                "id": record["id"],
+                "statement": record["statement"],
+                "valid_at": record["valid_at"],
+                "namespace": record["namespace"],
+            }
+
+    return None
 
 
 def apply_supersession(
-    driver: Driver,
-    subject_id: str,
-    predicate: str,
+    driver,
+    old_fact_id: str,
     new_fact_id: str,
-    new_object: str,
     new_valid_at: datetime,
-    namespace: str,
-    negation: bool = False,
-) -> Optional[str]:
-    """Apply supersession/contradiction logic for a new fact.
-    
-    Returns:
-        "superseded", "contradicted", "coexist", or None.
-    """"
-    if not is_functional(predicate):
-        # Non-functional: coexist, but check for contradictions
-        return _check_contradiction(driver, subject_id, predicate, new_object, new_fact_id, namespace, negation)
+) -> None:
+    """Apply supersession: mark old fact as superseded, create SUPERSEDES edge.
 
-    # Functional: find active fact with same (subject, predicate)
-    query = """
-    MATCH (e:Entity {id: $subject_id})<-[:SUBJECT]-(f:Fact {
-        predicate: $predicate,
-        namespace: $namespace,
-        epistemic_state: 'active'
-    })
-    WHERE f.invalid_at IS NULL
-    RETURN f.id AS id, f.statement AS statement,
-           [(f)-[:OBJECT]->(o) | coalesce(o.value, o.name)] AS objects
+    - Set old_fact.invalid_at = new_fact.valid_at
+    - Set old_fact.epistemic_state = 'superseded'
+    - Create SUPERSEDES edge from new fact to old fact
     """
     with driver.session() as session:
-        result = session.run(
-            query,
-            subject_id=subject_id,
-            predicate=predicate,
-            namespace=namespace
+        session.run(
+            """
+            MATCH (old:Fact {id: $old_fact_id}), (new:Fact {id: $new_fact_id})
+            SET old.invalid_at = $new_valid_at,
+                old.epistemic_state = 'superseded'
+            CREATE (new)-[:SUPERSEDES]->(old)
+            """,
+            old_fact_id=old_fact_id,
+            new_fact_id=new_fact_id,
+            new_valid_at=(
+                new_valid_at.isoformat()
+                if isinstance(new_valid_at, datetime)
+                else new_valid_at
+            ),
         )
-        records = list(result)
-
-    if not records:
-        return _check_contradiction(driver, subject_id, predicate, new_object, new_fact_id, namespace, negation)
-
-    for rec in records:
-        old_id = rec["id"]
-        old_objects = rec["objects"]
-        old_object = old_objects[0] if old_objects else ""
-
-        if old_object == new_object and not negation:
-            # Same fact, no change needed
-            return "coexist"
-
-        # Different object or negation -> supersede old
-        update_query = """
-        MATCH (f:Fact {id: $old_id})
-        SET f.invalid_at = $new_valid_at,
-            f.epistemic_state = 'superseded'
-        WITH f
-        MATCH (nf:Fact {id: $new_fact_id})
-        CREATE (nf)-[:SUPERSEDES]->(f)
-        """""
-        with driver.session() as session:
-            session.run(
-                update_query,
-                old_id=old_id,
-                new_fact_id=new_fact_id,
-                new_valid_at=new_valid_at
-            ).consume()
-
-    return "superseded"
+    logger.info(
+        f"Applied supersession: {new_fact_id} supersedes {old_fact_id}, "
+        f"invalid_at set to {new_valid_at}"
+    )
 
 
-def _check_contradiction(
-    driver: Driver,
+def detect_contradiction(
+    driver,
     subject_id: str,
     predicate: str,
     new_object: str,
-    new_fact_id: str,
+    new_negation: bool,
     namespace: str,
-    negation: bool,
 ) -> Optional[str]:
-    """Check if new fact contradicts existing fact (same pred+obj, negation flag).""""
-    if not negation:
-        return None
+    """Detect contradiction: same subject+predicate+object with negation flag.
 
-    query = """
-    MATCH (e:Entity {id: $subject_id})<-[:SUBJECT]-(f:Fact {
-        predicate: $predicate,
-        namespace: $namespace,
-        epistemic_state: 'active'
-    })
-    WHERE f.invalid_at IS NULL
-    RETURN f.id AS id
+    If a new fact has negation=true and an existing active fact has the same
+    subject+predicate+object (or vice versa), both should be flagged as contradicted.
+
+    Returns the existing fact ID if contradiction is detected, else None.
     """
     with driver.session() as session:
         result = session.run(
-            query,
+            """
+            MATCH (e:Entity {id: $subject_id})<-[:SUBJECT]-(f:Fact)
+            WHERE f.predicate = $predicate
+              AND f.epistemic_state = 'active'
+              AND f.invalid_at IS NULL
+              AND f.namespace = $namespace
+            RETURN f.id AS id
+            """,
             subject_id=subject_id,
             predicate=predicate,
-            namespace=namespace
+            namespace=namespace,
         )
-        records = list(result)
+        for record in result:
+            # Check if the object matches
+            obj_result = session.run(
+                """
+                MATCH (f:Fact {id: $fact_id})-[:OBJECT]->(target)
+                RETURN COALESCE(target.name, target.value) AS obj_value
+                """,
+                fact_id=record["id"],
+            )
+            obj_record = obj_result.single()
+            existing_object = obj_record["obj_value"] if obj_record else None
 
-    for rec in records:
-        old_id = rec["id"]
-        update_query = """
-        MATCH (f:Fact {id: $old_id}), (nf:Fact {id: $new_fact_id})
-        SET f.epistemic_state = 'contradicted',
-            nf.epistemic_state = 'contradicted'
-        CREATE (nf)-[:CONTRADICTS]->(f)
-        """""
-        with driver.session() as session:
-            session.run(update_query, old_id=old_id, new_fact_id=new_fact_id).consume()
+            if existing_object == new_object:
+                # Contradiction: same subject+predicate+object with negation
+                logger.info(
+                    f"Contradiction detected: fact {record['id']} has same "
+                    f"object '{new_object}' with negation flag"
+                )
+                return record["id"]
 
-    return "contradicted" if records else None
+    return None
+
+
+def apply_contradiction(
+    driver,
+    existing_fact_id: str,
+    new_fact_id: str,
+) -> None:
+    """Apply contradiction: flag both facts as contradicted, create CONTRADICTS edge."""
+    with driver.session() as session:
+        session.run(
+            """
+            MATCH (existing:Fact {id: $existing_id}), (new:Fact {id: $new_id})
+            SET existing.epistemic_state = 'contradicted',
+                new.epistemic_state = 'contradicted'
+            CREATE (new)-[:CONTRADICTS]->(existing)
+            """,
+            existing_id=existing_fact_id,
+            new_id=new_fact_id,
+        )
+    logger.info(
+        f"Applied contradiction: {new_fact_id} contradicts {existing_fact_id}"
+    )
+
+
+def get_history_as_of_knowledge(
+    driver,
+    entity_id: str,
+    at_time: datetime,
+    namespace: Optional[str] = None,
+) -> list[dict]:
+    """Query what Ferrite knew about an entity as of a knowledge time.
+
+    Filters by recorded_at <= at_time.
+    """
+    ns_filter = "AND f.namespace = $namespace" if namespace else ""
+
+    with driver.session() as session:
+        result = session.run(
+            f"""
+            MATCH (e:Entity {{id: $entity_id}})<-[:SUBJECT]-(f:Fact)
+            WHERE f.recorded_at <= $at_time
+            {ns_filter}
+            RETURN f.id AS id, f.statement AS statement, f.predicate AS predicate,
+                   f.certainty AS certainty, f.epistemic_state AS epistemic_state,
+                   f.valid_at AS valid_at, f.invalid_at AS invalid_at,
+                   f.recorded_at AS recorded_at, f.namespace AS namespace
+            ORDER BY f.recorded_at DESC
+            """,
+            entity_id=entity_id,
+            at_time=at_time.isoformat() if isinstance(at_time, datetime) else at_time,
+            namespace=namespace,
+        )
+        return [dict(r) for r in result]
+
+
+def get_history_as_of_world(
+    driver,
+    entity_id: str,
+    at_time: datetime,
+    namespace: Optional[str] = None,
+) -> list[dict]:
+    """Query what was true about an entity as of a world time.
+
+    Filters by valid_at <= at_time < coalesce(invalid_at, infinity).
+    """
+    ns_filter = "AND f.namespace = $namespace" if namespace else ""
+
+    with driver.session() as session:
+        result = session.run(
+            f"""
+            MATCH (e:Entity {{id: $entity_id}})<-[:SUBJECT]-(f:Fact)
+            WHERE f.valid_at <= $at_time
+              AND (f.invalid_at IS NULL OR f.invalid_at > $at_time)
+              {ns_filter}
+            RETURN f.id AS id, f.statement AS statement, f.predicate AS predicate,
+                   f.certainty AS certainty, f.epistemic_state AS epistemic_state,
+                   f.valid_at AS valid_at, f.invalid_at AS invalid_at,
+                   f.recorded_at AS recorded_at, f.namespace AS namespace
+            ORDER BY f.valid_at DESC
+            """,
+            entity_id=entity_id,
+            at_time=at_time.isoformat() if isinstance(at_time, datetime) else at_time,
+            namespace=namespace,
+        )
+        return [dict(r) for r in result]

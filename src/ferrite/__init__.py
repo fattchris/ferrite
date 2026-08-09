@@ -1,3 +1,3 @@
-"""Ferrite: A temporal knowledge graph system.""""
+"""Ferrite: Temporal Knowledge Graph System."""
 
 __version__ = "0.1.0"

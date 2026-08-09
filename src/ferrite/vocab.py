@@ -1,63 +1,67 @@
-"""Controlled predicate vocabulary with functional flags.""""
+"""Controlled predicate vocabulary with functional flags."""
 
-from typing import Optional
 
-# ~40 controlled predicates.
-# Functional predicates allow only one active value at a time.
-VOCAB: dict[str, dict] = {
-    # Functional
-    "works_at": {"functional": True, "description": "Subject is employed by or operates within Object organization"},
-    "version_is": {"functional": True, "description": "Subject has specific version Object"},
-    "runs_on": {"functional": True, "description": "Subject executes on Object platform"},
-    "ceo_of": {"functional": True, "description": "Subject is CEO of Object organization"},
-    "capital_is": {"functional": True, "description": "Subject has capital city Object"},
-    "located_in": {"functional": True, "description": "Subject is geographically located in Object"},
-    "founded_in": {"functional": True, "description": "Subject was founded in Object year"},
-    "died_in": {"functional": True, "description": "Subject died in Object year"},
-    "born_in": {"functional": True, "description": "Subject was born in Object year"},
-    "state_is": {"functional": True, "description": "Subject has current state Object"},
-    "author_is": {"functional": True, "description": "Subject authored by Object"},
-    "parent_is": {"functional": True, "description": "Subject has parent Object"},
-
-    # Non-functional
-    "uses": {"functional": False, "description": "Subject uses Object"},
-    "depends_on": {"functional": False, "description": "Subject depends on Object"},
-    "related_to": {"functional": False, "description": "Subject is related to Object"},
-    "manages": {"functional": False, "description": "Subject manages Object"},
-    "owns": {"functional": False, "description": "Subject owns Object"},
-    "funded_by": {"functional": False, "description": "Subject funded by Object"},
-    "member_of": {"functional": False, "description": "Subject is member of Object group"},
-    "part_of": {"functional": False, "description": "Subject is part of Object"},
-    "supports": {"functional": False, "description": "Subject supports Object"},
-    "integrates_with": {"functional": False, "description": "Subject integrates with Object"},
-    "competes_with": {"functional": False, "description": "Subject competes with Object"},
-    "built_by": {"functional": False, "description": "Subject built by Object"},
-    "maintained_by": {"functional": False, "description": "Subject maintained by Object"},
-    "designed_by": {"functional": False, "description": "Subject designed by Object"},
-    "deployed_at": {"functional": False, "description": "Subject deployed at Object location"},
-    "hosts": {"functional": False, "description": "Subject hosts Object"},
-    "contains": {"functional": False, "description": "Subject contains Object"},
-    "produces": {"functional": False, "description": "Subject produces Object"},
-    "consumes": {"functional": False, "description": "Subject consumes Object"},
-    "replaced_by": {"functional": False, "description": "Subject replaced by Object"},
-    "derived_from": {"functional": False, "description": "Subject derived from Object"},
-    "specified_by": {"functional": False, "description": "Subject specified by Object"},
-    "classified_as": {"functional": False, "description": "Subject classified as Object"},
-    "instance_of": {"functional": False, "description": "Subject is instance of Object"},
-    "alias_of": {"functional": False, "description": "Subject is alias of Object"},
-    "released_on": {"functional": False, "description": "Subject released on Object date"},
-    "occurred_on": {"functional": False, "description": "Subject occurred on Object date"},
+PREDICATE_VOCAB: dict[str, dict] = {
+    "works_at": {"functional": True, "description": "Entity works at an organization"},
+    "version_is": {"functional": True, "description": "Entity has a specific version"},
+    "runs_on": {"functional": True, "description": "Entity runs on a platform"},
+    "located_in": {"functional": True, "description": "Entity is located in a place"},
+    "married_to": {"functional": True, "description": "Entity is married to another entity"},
+    "ceo_of": {"functional": True, "description": "Entity is CEO of an organization"},
+    "capital_of": {"functional": True, "description": "Entity is the capital of a country"},
+    "author_of": {"functional": False, "description": "Entity authored a work"},
+    "uses": {"functional": False, "description": "Entity uses a tool or technology"},
+    "depends_on": {"functional": False, "description": "Entity depends on another entity"},
+    "related_to": {"functional": False, "description": "Loose association between entities"},
+    "employs": {"functional": False, "description": "Organization employs a person"},
+    "founded_by": {"functional": False, "description": "Organization founded by entity"},
+    "member_of": {"functional": False, "description": "Entity is a member of a group"},
+    "parent_of": {"functional": False, "description": "Entity is parent of another entity"},
+    "child_of": {"functional": False, "description": "Entity is child of another entity"},
+    "part_of": {"functional": False, "description": "Entity is part of a larger entity"},
+    "contains": {"functional": False, "description": "Entity contains another entity"},
+    "manages": {"functional": False, "description": "Entity manages another entity"},
+    "owns": {"functional": False, "description": "Entity owns another entity"},
+    "created": {"functional": False, "description": "Entity created a work or artifact"},
+    "manufactured_by": {"functional": False, "description": "Product manufactured by entity"},
+    "published_on": {"functional": True, "description": "Work published on a date"},
+    "born_on": {"functional": True, "description": "Entity born on a date"},
+    "died_on": {"functional": True, "description": "Entity died on a date"},
+    "height_is": {"functional": True, "description": "Entity has a specific height"},
+    "weight_is": {"functional": True, "description": "Entity has a specific weight"},
+    "color_is": {"functional": True, "description": "Entity has a specific color"},
+    "language_is": {"functional": False, "description": "Work written in a language"},
+    "genre_is": {"functional": False, "description": "Work belongs to a genre"},
+    "directed_by": {"functional": True, "description": "Work directed by entity"},
+    "starring": {"functional": False, "description": "Work stars entity"},
+    "released_on": {"functional": True, "description": "Work released on a date"},
+    "headquartered_in": {"functional": True, "description": "Org headquartered in a place"},
+    "serves": {"functional": False, "description": "Entity serves another entity"},
+    "competes_with": {"functional": False, "description": "Entity competes with another"},
+    "partnered_with": {"functional": False, "description": "Entity partnered with another"},
+    "acquired_by": {"functional": True, "description": "Entity acquired by another"},
+    "replaced_by": {"functional": True, "description": "Entity replaced by another"},
+    "named": {"functional": True, "description": "Entity has a formal name"},
 }
 
 
-def get_predicate(pred_id: str) -> Optional[dict]:
-    return VOCAB.get(pred_id)
+def get_predicate(pred_id: str) -> dict:
+    """Get predicate metadata. Raises ValueError if unknown."""
+    if pred_id not in PREDICATE_VOCAB:
+        raise ValueError(f"Unknown predicate: {pred_id}")
+    return PREDICATE_VOCAB[pred_id]
 
 
 def is_functional(pred_id: str) -> bool:
-    p = VOCAB.get(pred_id)
-    return p["functional"] if p else False
+    """Check if a predicate is functional. Raises ValueError if unknown."""
+    return get_predicate(pred_id)["functional"]
 
 
 def is_valid_predicate(pred_id: str) -> bool:
-    return pred_id in VOCAB
+    """Check if a predicate exists in the vocabulary."""
+    return pred_id in PREDICATE_VOCAB
+
+
+def list_predicates() -> list[str]:
+    """List all predicate IDs."""
+    return list(PREDICATE_VOCAB.keys())

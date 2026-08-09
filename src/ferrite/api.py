@@ -1,191 +1,283 @@
-"""FastAPI application with Ferrite endpoints.""""
+"""FastAPI application with Ferrite KG endpoints."""
 
-import asyncio
+import logging
 import time
 from datetime import datetime
 from typing import Optional
 
-import redis.asyncio as aioredis
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from neo4j import Driver
 
-from ferrite.config import get_settings
-from ferrite.ingestion import queue_episode, process_episode
-from ferrite.schema import init_schema
+from .config import get_settings
+from .ingestion import IngestionPipeline
+from .models import (
+    HealthResponse,
+    SearchResponse,
+    SearchResult,
+    StoreRequest,
+    StoreResponse,
+)
+from .temporal import get_history_as_of_knowledge, get_history_as_of_world
 
-app = FastAPI(title="Ferrite", version="0.1.0")
+logger = logging.getLogger(__name__)
+settings = get_settings()
 
-_driver: Optional[Driver] = None
-_redis: Optional[aioredis.Redis] = None
-
-
-def get_driver() -> Driver:
-    global _driver
-    if _driver is None:
-        from neo4j import GraphDatabase
-        s = get_settings()
-        _driver = GraphDatabase.driver(s.NEO4J_URI, auth=(s.NEO4J_USER, s.NEO4J_PASSWORD))
-    return _driver
+# Rate limiting storage (in-memory for MVP; Redis in production)
+_rate_limit_store: dict[str, dict] = {}
 
 
-def get_redis() -> aioredis.Redis:
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(get_settings().REDIS_URL)
-    return _redis
+def _check_rate_limit(api_key: str, is_write: bool) -> bool:
+    """Token bucket rate limiter. Returns True if request is allowed."""
+    if not api_key:
+        api_key = "anonymous"
 
-
-# Rate limiting state
-_rate_limits: dict[str, dict] = {}
-WRITE_METHODS = {"POST"}
-ADMIN_KEYS = {"admin", "ferrite-admin"}
-
-
-def check_rate_limit(api_key: str, is_write: bool) -> bool:
-    if api_key in ADMIN_KEYS:
+    # Admin keys are exempt
+    admin_keys = {"admin", "ferrite-admin"}
+    if api_key in admin_keys:
         return True
-    limit = 20 if is_write else 100
-    window = 60
+
     now = time.time()
-    key = f"{api_key}:{'w' if is_write else 'r'}"
-    if key not in _rate_limits:
-        _rate_limits[key] = {"count": 0, "reset": now + window}
-    state = _rate_limits[key]
-    if now > state["reset"]:
-        state["count"] = 0
-        state["reset"] = now + window
-    state["count"] += 1
-    return state["count"] <= limit
+    limit = settings.WRITE_RATE_LIMIT if is_write else settings.READ_RATE_LIMIT
+    window = 60.0  # 1 minute
+
+    if api_key not in _rate_limit_store:
+        _rate_limit_store[api_key] = {"read": [], "write": []}
+
+    bucket_key = "write" if is_write else "read"
+    bucket = _rate_limit_store[api_key][bucket_key]
+
+    # Remove timestamps outside the window
+    bucket[:] = [t for t in bucket if now - t < window]
+
+    if len(bucket) >= limit:
+        return False
+
+    bucket.append(now)
+    return True
 
 
-@app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    api_key = request.headers.get("X-API-Key", "anonymous")
-    is_write = request.method in WRITE_METHODS
-    if not check_rate_limit(api_key, is_write):
-        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
-    return await call_next(request)
+def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
+    """Create the FastAPI application."""
+    app = FastAPI(
+        title="Ferrite",
+        description="Temporal Knowledge Graph System",
+        version="0.1.0",
+    )
 
-
-@app.on_event("startup")
-async def startup_event():
-    init_schema(get_driver())
-    asyncio.create_task(ingestion_worker())
-
-
-async def ingestion_worker():
-    while True:
+    # Initialize pipeline if not provided
+    if pipeline is None:
         try:
-            await process_episode(get_redis(), get_driver())
+            pipeline = IngestionPipeline(
+                redis_url=settings.REDIS_URL,
+                neo4j_uri=settings.NEO4J_URI,
+                neo4j_user=settings.NEO4J_USER,
+                neo4j_password=settings.NEO4J_PASSWORD,
+            )
+        except Exception as e:
+            logger.warning(f"Could not initialize pipeline: {e}")
+            pipeline = None
+
+    @app.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next):
+        api_key = request.headers.get("X-API-Key", "")
+        is_write = request.method in ("POST", "PUT", "PATCH", "DELETE")
+
+        if not _check_rate_limit(api_key, is_write):
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded"},
+            )
+
+        return await call_next(request)
+
+    @app.post("/store", response_model=StoreResponse)
+    async def store(req: StoreRequest):
+        """Queue content for ingestion."""
+        if pipeline is None:
+            raise HTTPException(status_code=503, detail="Pipeline not available")
+
+        from .models import Episode
+
+        episode = Episode(
+            content=req.content,
+            content_type=req.content_type,
+            source=req.source,
+            namespace=req.namespace or settings.NAMESPACE_DEFAULT,
+        )
+        episode_id = pipeline.enqueue(episode)
+        return StoreResponse(episode_id=episode_id, status="queued")
+
+    @app.get("/search", response_model=SearchResponse)
+    async def search(
+        query: str = Query(..., min_length=1),
+        namespace: Optional[str] = Query(None),
+        limit: int = Query(10, le=100),
+    ):
+        """Search facts by BM25 + semantic hybrid on Fact.statement."""
+        if pipeline is None:
+            raise HTTPException(status_code=503, detail="Pipeline not available")
+
+        ns_filter = "AND f.namespace = $namespace" if namespace else ""
+
+        with pipeline.driver.session() as session:
+            result = session.run(
+                f"""
+                CALL db.index.fulltext.queryNodes('fact_statement_fulltext', $query)
+                YIELD node AS f, score
+                WHERE f:Fact
+                {ns_filter}
+                RETURN f.id AS id, f.statement AS statement,
+                       f.certainty AS certainty,
+                       f.assertion_source AS source,
+                       f.valid_at AS valid_at
+                ORDER BY score DESC
+                LIMIT $limit
+                """,
+                query=query,
+                namespace=namespace,
+                limit=limit,
+            )
+
+            results = [
+                SearchResult(
+                    id=r["id"],
+                    statement=r["statement"],
+                    certainty=r["certainty"],
+                    source=r["source"],
+                    valid_at=str(r["valid_at"]) if r["valid_at"] else "",
+                )
+                for r in result
+            ]
+
+        return SearchResponse(results=results)
+
+    @app.get("/entities/{entity_id}")
+    async def get_entity(
+        entity_id: str,
+        namespace: Optional[str] = Query(None),
+    ):
+        """Get full entity node with edges, provenance, and temporal history.
+        Edges filtered by namespace (via neighbor Fact's namespace)."""
+        if pipeline is None:
+            raise HTTPException(status_code=503, detail="Pipeline not available")
+
+        ns_filter = "AND f.namespace = $namespace" if namespace else ""
+
+        with pipeline.driver.session() as session:
+            # Get entity
+            entity_result = session.run(
+                """
+                MATCH (e:Entity {id: $entity_id})
+                RETURN e.id AS id, e.type AS type, e.name AS name, e.summary AS summary
+                """,
+                entity_id=entity_id,
+            )
+            entity_record = entity_result.single()
+
+            if not entity_record:
+                raise HTTPException(status_code=404, detail="Entity not found")
+
+            # Get facts where entity is subject
+            subj_result = session.run(
+                f"""
+                MATCH (e:Entity {{id: $entity_id}})<-[:SUBJECT]-(f:Fact)
+                WHERE true
+                {ns_filter}
+                RETURN f.id AS id, f.statement AS statement, f.predicate AS predicate,
+                       f.certainty AS certainty, f.epistemic_state AS epistemic_state,
+                       f.valid_at AS valid_at, f.invalid_at AS invalid_at,
+                       f.recorded_at AS recorded_at, f.namespace AS namespace
+                """,
+                entity_id=entity_id,
+                namespace=namespace,
+            )
+
+            # Get facts where entity is object
+            obj_result = session.run(
+                f"""
+                MATCH (e:Entity {{id: $entity_id}})<-[:OBJECT]-(f:Fact)
+                WHERE true
+                {ns_filter}
+                RETURN f.id AS id, f.statement AS statement, f.predicate AS predicate,
+                       f.certainty AS certainty, f.epistemic_state AS epistemic_state,
+                       f.valid_at AS valid_at, f.invalid_at AS invalid_at,
+                       f.recorded_at AS recorded_at, f.namespace AS namespace
+                """,
+                entity_id=entity_id,
+                namespace=namespace,
+            )
+
+            return {
+                "entity": dict(entity_record),
+                "facts_as_subject": [dict(r) for r in subj_result],
+                "facts_as_object": [dict(r) for r in obj_result],
+            }
+
+    @app.get("/history/{entity_id}")
+    async def get_history(
+        entity_id: str,
+        at_time: Optional[str] = Query(None),
+        mode: str = Query("knowledge", regex="^(knowledge|world)$"),
+        namespace: Optional[str] = Query(None),
+    ):
+        """Temporal query: as_of_knowledge or as_of_world."""
+        if pipeline is None:
+            raise HTTPException(status_code=503, detail="Pipeline not available")
+
+        if at_time:
+            try:
+                dt = datetime.fromisoformat(at_time)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid datetime format. Use ISO 8601.",
+                )
+        else:
+            dt = datetime.utcnow()
+
+        if mode == "knowledge":
+            facts = get_history_as_of_knowledge(
+                pipeline.driver, entity_id, dt, namespace
+            )
+        else:
+            facts = get_history_as_of_world(
+                pipeline.driver, entity_id, dt, namespace
+            )
+
+        return {"entity_id": entity_id, "mode": mode, "at_time": dt.isoformat(), "facts": facts}
+
+    @app.get("/health", response_model=HealthResponse)
+    async def health():
+        """System health: Neo4j, Redis, queue depth."""
+        neo4j_status = "ok"
+        redis_status = "ok"
+        queue_depth = 0
+
+        if pipeline is None:
+            return HealthResponse(
+                neo4j="unavailable",
+                redis="unavailable",
+                queue_depth=0,
+            )
+
+        # Check Neo4j
+        try:
+            with pipeline.driver.session() as session:
+                session.run("RETURN 1").consume()
         except Exception:
-            pass
-        await asyncio.sleep(0.1)
+            neo4j_status = "error"
 
+        # Check Redis
+        try:
+            pipeline.redis_client.ping()
+            queue_depth = pipeline.get_queue_depth()
+        except Exception:
+            redis_status = "error"
 
-@app.get("/health")
-async def health():
-    status = {"status": "healthy"}
-    try:
-        get_driver().verify_connectivity()
-        status["neo4j"] = "connected"
-    except Exception:
-        status["neo4j"] = "disconnected"
-        status["status"] = "degraded"
-    try:
-        await get_redis().ping()
-        status["redis"] = "connected"
-    except Exception:
-        status["redis"] = "disconnected"
-        status["status"] = "degraded"
-    try:
-        depth = await get_redis().llen("ferrite:ingestion:queue")
-        status["queue_depth"] = depth
-    except Exception:
-        status["queue_depth"] = -1
-    return status
+        return HealthResponse(
+            neo4j=neo4j_status,
+            redis=redis_status,
+            queue_depth=queue_depth,
+        )
 
-
-@app.post("/store")
-async def store(
-    request: Request,
-    content: str = Query(...),
-    content_type: str = Query("text/plain"),
-    namespace: Optional[str] = Query(None),
-):
-    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
-    source = body.get("source", {"type": "api"})
-    return await queue_episode(get_redis(), content, content_type, source, namespace)
-
-
-@app.get("/search")
-async def search(
-    query: str = Query(...),
-    namespace: Optional[str] = Query(None),
-    limit: int = Query(10, le=50),
-):
-    ns = namespace or get_settings().NAMESPACE_DEFAULT
-    cypher = """
-    CALL db.index.fulltext.queryNodes('fact_statement_fulltext', $query) YIELD node, score
-    WHERE node:Fact AND node.namespace = $namespace
-    RETURN node.id AS id, node.statement AS statement, node.certainty AS certainty,
-           node.valid_at AS valid_at, node.epistemic_state AS epistemic_state, score
-    ORDER BY score DESC
-    LIMIT $limit
-    """
-    with get_driver().session() as session:
-        result = session.run(cypher, query=query, namespace=ns, limit=limit)
-        return [dict(r) for r in result]
-
-
-@app.get("/entity/{entity_id}")
-async def get_entity(entity_id: str, namespace: Optional[str] = Query(None)):
-    ns = namespace or get_settings().NAMESPACE_DEFAULT
-    query = """
-    MATCH (e:Entity {id: $entity_id})
-    OPTIONAL MATCH (e)<-[:SUBJECT]-(f:Fact {namespace: $namespace})
-    RETURN e.id AS id, e.name AS name, e.type AS type, e.summary AS summary,
-           collect({
-               id: f.id, statement: f.statement, predicate: f.predicate,
-               certainty: f.certainty, epistemic_state: f.epistemic_state,
-               valid_at: f.valid_at, invalid_at: f.invalid_at
-           }) AS facts
-    """
-    with get_driver().session() as session:
-        rec = session.run(query, entity_id=entity_id, namespace=ns).single()
-        if not rec:
-            raise HTTPException(status_code=404, detail="Entity not found")
-        return dict(rec)
-
-
-@app.get("/history/{fact_id}")
-async def get_history(
-    fact_id: str,
-    at_time: Optional[datetime] = Query(None),
-    mode: str = Query("knowledge"),
-    namespace: Optional[str] = Query(None),
-):
-    ns = namespace or get_settings().NAMESPACE_DEFAULT
-
-    if mode == "knowledge":
-        # as_of_knowledge: recorded_at <= T
-        query = """
-        MATCH (f:Fact {id: $fact_id, namespace: $namespace})
-        WHERE f.recorded_at <= $at_time
-        RETURN f
-        """
-    elif mode == "world":
-        # as_of_world: valid_at <= T < coalesce(invalid_at, ∞)
-        query = """
-        MATCH (f:Fact {id: $fact_id, namespace: $namespace})
-        WHERE f.valid_at <= $at_time AND (f.invalid_at IS NULL OR f.invalid_at > $at_time)
-        RETURN f
-        """
-    else:
-        raise HTTPException(status_code=400, detail="Invalid mode")
-
-    with get_driver().session() as session:
-        rec = session.run(query, fact_id=fact_id, namespace=ns, at_time=at_time or datetime.now()).single()
-        if not rec:
-            raise HTTPException(status_code=404, detail="Fact not found for given time")
-        return dict(rec)
+    return app

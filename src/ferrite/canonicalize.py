@@ -1,78 +1,211 @@
-"""Entity normalization and alias resolution.""""
+"""Entity canonicalization: normalization, alias resolution, and merge logic."""
 
+import logging
 import re
-from typing import Optional
+from typing import Callable, Optional
 
-from neo4j import Driver
+from .models import Entity
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_name(name: str) -> str:
-    """Normalize entity name: lowercase, strip punctuation, collapse whitespace.""""
+    """Normalize an entity name for alias matching.
+
+    Steps:
+    1. Lowercase
+    2. Strip leading/trailing whitespace
+    3. Normalize separators (hyphens, slashes, underscores to spaces)
+    4. Strip punctuation (keep alphanumerics and spaces)
+    5. Collapse whitespace
+    """
     if not name:
         return ""
     s = name.lower().strip()
-    # Replace common separators with spaces
-    s = re.sub(r"[_\-]+", " ", s)
-    # Strip punctuation
+    s = re.sub(r"[-_/]", " ", s)
     s = re.sub(r"[^a-z0-9\s]", "", s)
-    # Collapse whitespace
-    s = re.sub(r"\s+", " ", s)
-    return s.strip()
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
-def resolve_entity_by_name(driver: Driver, name: str) -> Optional[dict]:
-    """Resolve entity by normalized name via Alias index."""""
+def get_embedding(embedding_func: Callable, text: str) -> list[float]:
+    """Call the embedding function and return a vector."""
+    return embedding_func(text)
+
+
+def cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Compute cosine similarity between two vectors."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(x * x for x in b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def resolve_entity(
+    driver,
+    name: str,
+    embedding_func: Optional[Callable] = None,
+    entity_type: str = "entity",
+    summary: Optional[str] = None,
+) -> Entity:
+    """Resolve an entity by name through alias lookup and embedding match.
+
+    Resolution steps:
+    1. Normalize name.
+    2. Check exact alias lookup in Neo4j.
+    3. If no alias hit, compute embedding and do ANN search.
+    4. If similarity >= 0.95, auto-merge (create MERGED_INTO edge).
+    5. If 0.80 <= similarity < 0.95, LLM adjudication (Phase 1 stub: create new).
+    6. If < 0.80, create new Entity + ALIAS edge.
+
+    Returns the resolved Entity object.
+    """
     norm = normalize_name(name)
     if not norm:
-        return None
-    query = """
-    MATCH (e:Entity)-[:ALIAS]->(a:Alias {norm: $norm})
-    RETURN e.id AS id, e.name AS name, e.type AS type, e.summary AS summary
-    LIMIT 1
-    """
-    with driver.session() as session:
-        result = session.run(query, norm=norm)
-        record = result.single()
-        if record:
-            return dict(record)
-    return None
+        raise ValueError("Cannot resolve empty entity name")
 
-
-def create_entity(driver: Driver, name: str, entity_type: str = "entity", summary: Optional[str] = None) -> dict:
-    """Create a new Entity node with ALIAS edge.""""
-    import uuid
-    from datetime import datetime, timezone
-    entity_id = str(uuid.uuid4())
-    norm = normalize_name(name)
-    query = """
-    CREATE (e:Entity {
-        id: $id,
-        type: $type,
-        name: $name,
-        summary: $summary,
-        created_at: datetime()
-    })
-    WITH e
-    MERGE (a:Alias {norm: $norm})
-    CREATE (e)-[:ALIAS]->(a)
-    RETURN e.id AS id, e.name AS name, e.type AS type, e.summary AS summary
-    """""
+    # Step 2: Exact alias lookup
     with driver.session() as session:
         result = session.run(
-            query,
-            id=entity_id,
-            type=entity_type,
-            name=name,
-            summary=summary,
-            norm=norm
+            """
+            MATCH (e:Entity)-[:ALIAS]->(a:Alias {norm: $norm})
+            RETURN e.id AS id, e.type AS type, e.name AS name, e.summary AS summary
+            LIMIT 1
+            """,
+            norm=norm,
         )
         record = result.single()
-        return dict(record) if record else {"id": entity_id, "name": name, "type": entity_type, "summary": summary}
+
+    if record:
+        logger.info(f"Alias hit for '{name}' -> entity {record['id']}")
+        return Entity(
+            id=record["id"],
+            type=record["type"],
+            name=record["name"],
+            summary=record["summary"],
+        )
+
+    # Step 3: Embedding-based search
+    best_entity = None
+    best_similarity = 0.0
+
+    if embedding_func is not None:
+        query_embedding = get_embedding(embedding_func, name)
+
+        with driver.session() as session:
+            result = session.run(
+                """
+                MATCH (e:Entity)
+                WHERE e.embedding IS NOT NULL
+                RETURN e.id AS id, e.type AS type, e.name AS name,
+                       e.summary AS summary, e.embedding AS embedding
+                """
+            )
+            for record in result:
+                sim = cosine_similarity(query_embedding, record["embedding"])
+                if sim > best_similarity:
+                    best_similarity = sim
+                    best_entity = record
+
+    # Step 4: Auto-merge at >= 0.95
+    if best_entity and best_similarity >= 0.95:
+        logger.info(
+            f"Auto-merge '{name}' (sim={best_similarity:.3f}) -> entity {best_entity['id']}"
+        )
+        _create_alias(driver, best_entity["id"], norm)
+        return Entity(
+            id=best_entity["id"],
+            type=best_entity["type"],
+            name=best_entity["name"],
+            summary=best_entity["summary"],
+        )
+
+    # Step 5: 0.80-0.95 LLM adjudication (Phase 1 stub: create new)
+    if best_entity and 0.80 <= best_similarity < 0.95:
+        logger.info(
+            f"Ambiguous match '{name}' (sim={best_similarity:.3f}); "
+            "LLM adjudication not yet implemented, creating new entity."
+        )
+
+    # Step 6: Create new entity
+    return create_entity(driver, name, entity_type, summary, embedding_func)
 
 
-def get_or_create_entity(driver: Driver, name: str, entity_type: str = "entity", summary: Optional[str] = None) -> dict:
-    """Resolve or create entity.""""
-    existing = resolve_entity_by_name(driver, name)
-    if existing:
-        return existing
-    return create_entity(driver, name, entity_type, summary)
+def create_entity(
+    driver,
+    name: str,
+    entity_type: str = "entity",
+    summary: Optional[str] = None,
+    embedding_func: Optional[Callable] = None,
+) -> Entity:
+    """Create a new Entity node plus an ALIAS edge for the normalized name."""
+    entity = Entity(type=entity_type, name=name, summary=summary)
+    norm = normalize_name(name)
+
+    embedding_val = None
+    if embedding_func is not None:
+        embedding_val = get_embedding(embedding_func, name)
+
+    with driver.session() as session:
+        session.run(
+            """
+            CREATE (e:Entity {
+                id: $id, type: $type, name: $name, summary: $summary
+            })
+            WITH e
+            MERGE (a:Alias {norm: $norm})
+            CREATE (e)-[:ALIAS]->(a)
+            """,
+            id=entity.id,
+            type=entity.type,
+            name=entity.name,
+            summary=entity.summary,
+            norm=norm,
+        )
+
+        if embedding_val is not None:
+            session.run(
+                """
+                MATCH (e:Entity {id: $id})
+                SET e.embedding = $embedding
+                """,
+                id=entity.id,
+                embedding=embedding_val,
+            )
+
+    logger.info(f"Created new entity '{name}' (id={entity.id})")
+    return entity
+
+
+def _create_alias(driver, entity_id: str, norm: str) -> None:
+    """Create an ALIAS edge from an existing entity to a normalized name."""
+    with driver.session() as session:
+        session.run(
+            """
+            MATCH (e:Entity {id: $entity_id})
+            MERGE (a:Alias {norm: $norm})
+            MERGE (e)-[:ALIAS]->(a)
+            """,
+            entity_id=entity_id,
+            norm=norm,
+        )
+
+
+def merge_entities(driver, source_id: str, target_id: str) -> None:
+    """Create a MERGED_INTO edge from source entity to target entity.
+    Merges are additive — never destructive.
+    """
+    with driver.session() as session:
+        session.run(
+            """
+            MATCH (source:Entity {id: $source_id}), (target:Entity {id: $target_id})
+            CREATE (source)-[:MERGED_INTO]->(target)
+            """,
+            source_id=source_id,
+            target_id=target_id,
+        )
+    logger.info(f"Merged entity {source_id} into {target_id}")
