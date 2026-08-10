@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferrite — Knowledge Explorer</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface-hover: #1c2128;
+            --border: #30363d;
+            --border-active: #58a6ff;
+            --text: #e6edf3;
+            --text-dim: #8b949e;
+            --text-faint: #6e7681;
+            --accent: #58a6ff;
+            --accent-dim: #1f6feb;
+            --purple: #bc8cff;
+            --green: #3fb950;
+            --yellow: #d29922;
+            --red: #f85149;
+            --orange: #db6d28;
+            --radius: 6px;
+            --mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+            --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; overflow: hidden; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--sans);
+            font-size: 14px;
+        }
+
+        /* ── Top bar ── */
+        .topbar {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            height: 48px;
+            flex-shrink: 0;
+        }
+        .topbar .logo { font-size: 16px; font-weight: 700; color: var(--accent); }
+        .topbar .badge {
+            background: var(--accent-dim);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        .topbar nav { display: flex; gap: 2px; margin-left: 16px; }
+        .topbar nav a {
+            color: var(--text-dim);
+            text-decoration: none;
+            padding: 4px 12px;
+            border-radius: var(--radius);
+            font-size: 13px;
+            transition: all 0.15s;
+        }
+        .topbar nav a:hover { color: var(--text); background: var(--surface-hover); }
+        .topbar nav a.active { color: var(--accent); background: rgba(88,166,255,0.1); }
+        .topbar .spacer { flex: 1; }
+        .topbar .health { display: flex; gap: 8px; font-size: 11px; color: var(--text-dim); }
+        .topbar .health span { display: flex; align-items: center; gap: 4px; }
+        .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+        .dot.ok { background: var(--green); }
+        .dot.err { background: var(--red); }
+
+        /* ── Layout ── */
+        .layout {
+            display: flex;
+            height: calc(100vh - 48px);
+            overflow: hidden;
+        }
+
+        /* ── Sidebar: Entity list ── */
+        .sidebar {
+            width: 280px;
+            min-width: 280px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .sidebar-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .sidebar-header h2 {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-faint);
+            margin-bottom: 8px;
+        }
+        .search-wrap { position: relative; }
+        .search-wrap input {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 8px 12px 8px 32px;
+            color: var(--text);
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+        .search-wrap input:focus { border-color: var(--accent); }
+        .search-wrap .icon {
+            position: absolute;
+            left: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-faint);
+            font-size: 14px;
+        }
+        .entity-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px;
+        }
+        .entity-item {
+            padding: 8px 12px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: background 0.1s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .entity-item:hover { background: var(--surface-hover); }
+        .entity-item.active { background: rgba(88,166,255,0.1); border-left: 2px solid var(--accent); }
+        .entity-icon { font-size: 16px; flex-shrink: 0; }
+        .entity-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .entity-type { font-size: 10px; color: var(--text-faint); margin-left: auto; }
+        .entity-count { font-size: 10px; color: var(--accent); background: rgba(88,166,255,0.1); padding: 1px 6px; border-radius: 8px; }
+        .sidebar-footer {
+            padding: 8px 16px;
+            border-top: 1px solid var(--border);
+            font-size: 11px;
+            color: var(--text-faint);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* ── Main: Entity detail ── */
+        .main {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0;
+        }
+        .entity-header {
+            padding: 24px 32px 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+        }
+        .entity-title { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+        .entity-title h1 { font-size: 24px; font-weight: 700; }
+        .entity-title .type-badge {
+            font-size: 11px;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-weight: 500;
+        }
+        .type-person { background: rgba(188,140,255,0.1); color: var(--purple); }
+        .type-server { background: rgba(219,109,40,0.1); color: var(--orange); }
+        .type-software { background: rgba(88,166,255,0.1); color: var(--accent); }
+        .type-concept { background: rgba(63,185,80,0.1); color: var(--green); }
+        .type-default { background: rgba(139,148,158,0.1); color: var(--text-dim); }
+        .entity-summary { color: var(--text-dim); font-size: 14px; line-height: 1.5; max-width: 600px; }
+
+        .tab-bar {
+            display: flex;
+            gap: 0;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0 32px;
+        }
+        .tab-btn {
+            padding: 10px 16px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 13px;
+            font-family: var(--sans);
+            transition: all 0.15s;
+        }
+        .tab-btn:hover { color: var(--text); }
+        .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+        .tab-panel { display: none; padding: 24px 32px; }
+        .tab-panel.active { display: block; }
+
+        /* ── Fact cards ── */
+        .fact-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 14px 16px;
+            margin-bottom: 8px;
+            transition: border-color 0.15s;
+        }
+        .fact-card:hover { border-color: var(--border-active); }
+        .fact-statement { font-size: 14px; line-height: 1.5; margin-bottom: 8px; }
+        .fact-meta {
+            display: flex;
+            gap: 12px;
+            font-size: 11px;
+            color: var(--text-faint);
+            flex-wrap: wrap;
+        }
+        .fact-meta .pred { color: var(--accent); font-family: var(--mono); }
+        .fact-meta .cert { color: var(--green); }
+        .fact-meta .cert.spec { color: var(--yellow); }
+        .fact-meta .cert.inf { color: var(--orange); }
+        .fact-meta .time { color: var(--text-dim); }
+        .fact-meta .src { color: var(--purple); }
+        .fact-link {
+            color: var(--accent);
+            text-decoration: none;
+            cursor: pointer;
+            border-bottom: 1px dotted var(--accent);
+        }
+        .fact-link:hover { opacity: 0.8; }
+        .fact-state {
+            display: inline-block;
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 8px;
+            margin-left: 8px;
+        }
+        .state-active { background: rgba(63,185,80,0.1); color: var(--green); }
+        .state-contradicted { background: rgba(248,81,73,0.1); color: var(--red); }
+        .state-superseded { background: rgba(139,148,158,0.1); color: var(--text-faint); }
+
+        /* ── Graph viz ── */
+        .graph-container {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            height: 500px;
+            position: relative;
+            overflow: hidden;
+        }
+        .graph-svg { width: 100%; height: 100%; }
+        .graph-node { cursor: pointer; }
+        .graph-node circle { transition: r 0.2s; }
+        .graph-node:hover circle { r: 14; }
+        .graph-edge { stroke: var(--border); stroke-width: 1.5; fill: none; }
+        .graph-label { font-size: 11px; fill: var(--text-dim); font-family: var(--sans); pointer-events: none; }
+        .graph-center circle { fill: var(--accent); }
+        .graph-center text { fill: white; font-weight: 600; }
+
+        /* ── Timeline ── */
+        .timeline { position: relative; padding-left: 24px; }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border);
+        }
+        .timeline-item {
+            position: relative;
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -20px;
+            top: 16px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid var(--border);
+            background: var(--surface);
+        }
+        .timeline-item.active::before { border-color: var(--green); background: var(--green); }
+        .timeline-item.superseded::before { border-color: var(--text-faint); }
+        .timeline-item.contradicted::before { border-color: var(--red); }
+        .timeline-date { font-size: 11px; color: var(--text-faint); margin-bottom: 4px; }
+
+        /* ── Stats ── */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+        .stat {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 16px;
+            text-align: center;
+        }
+        .stat .num { font-size: 28px; font-weight: 700; color: var(--accent); }
+        .stat .lbl { font-size: 11px; color: var(--text-faint); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* ── Empty / loading ── */
+        .empty { text-align: center; padding: 48px; color: var(--text-faint); }
+        .loading { text-align: center; padding: 24px; color: var(--text-dim); }
+        .spinner {
+            display: inline-block;
+            width: 16px; height: 16px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Backlinks ── */
+        .backlink {
+            padding: 8px 12px;
+            background: rgba(255,255,255,0.02);
+            border-left: 2px solid var(--border);
+            margin-bottom: 6px;
+            border-radius: 0 var(--radius) var(--radius) 0;
+            font-size: 13px;
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+        .backlink:hover { border-left-color: var(--accent); }
+
+        /* ── API key bar ── */
+        .api-key-bar {
+            padding: 6px 16px;
+            background: rgba(210, 153, 34, 0.05);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+        .api-key-bar input {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 3px 8px;
+            color: var(--text);
+            font-size: 12px;
+            width: 200px;
+            outline: none;
+        }
+        .api-key-bar input:focus { border-color: var(--accent); }
+
+        /* ── Breadcrumb ── */
+        .breadcrumb {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-faint);
+            margin-bottom: 8px;
+        }
+        .breadcrumb a { color: var(--accent); text-decoration: none; cursor: pointer; }
+        .breadcrumb a:hover { text-decoration: underline; }
+        .breadcrumb .sep { color: var(--text-faint); }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+    </style>
+</head>
+<body>
+    <!-- Top bar -->
+    <div class="topbar">
+        <span class="logo">🧲 Ferrite</span>
+        <span class="badge">Wiki</span>
+        <nav>
+            <a href="/">Search</a>
+            <a href="/wiki" class="active">Wiki</a>
+            <a href="/install">Install</a>
+        </nav>
+        <div class="spacer"></div>
+        <div class="health">
+            <span><span class="dot ok" id="neo4jDot"></span> Neo4j</span>
+            <span><span class="dot ok" id="redisDot"></span> Redis</span>
+            <span>Q: <span id="queueDepth">0</span></span>
+        </div>
+    </div>
+
+    <!-- API key bar -->
+    <div class="api-key-bar">
+        <span>🔑</span>
+        <input type="password" id="apiKey" placeholder="Bearer token" onchange="saveKey()">
+        <span style="color: var(--text-faint)">Required for queries</span>
+    </div>
+
+    <!-- Layout -->
+    <div class="layout">
+        <!-- Sidebar: Entity browser -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Entities</h2>
+                <div class="search-wrap">
+                    <span class="icon">🔍</span>
+                    <input type="text" id="entitySearch" placeholder="Search entities..." oninput="searchEntities()">
+                </div>
+            </div>
+            <div class="entity-list" id="entityList">
+                <div class="loading"><span class="spinner"></span> Loading entities...</div>
+            </div>
+            <div class="sidebar-footer">
+                <span id="entityCount">0 entities</span>
+                <span id="factCount">0 facts</span>
+            </div>
+        </div>
+
+        <!-- Main: Entity detail -->
+        <div class="main" id="mainContent">
+            <div class="empty">
+                <div style="font-size: 48px; margin-bottom: 16px;">🧲</div>
+                <h2>Knowledge Explorer</h2>
+                <p>Select an entity from the sidebar to explore its facts,<br>relationships, temporal history, and graph connections.</p>
+                <br>
+                <p style="font-size: 12px; color: var(--text-faint)">This is the Ferrite wiki — an Obsidian-like interface for your<br>temporal knowledge graph. Browse entities, trace facts<br>through time, and discover connections.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = window.location.origin;
+        let apiKey = localStorage.getItem('ferrite_api_key') || '';
+        document.getElementById('apiKey').value = apiKey;
+        let currentEntity = null;
+        let allEntities = [];
+
+        function saveKey() {
+            apiKey = document.getElementById('apiKey').value;
+            localStorage.setItem('ferrite_api_key', apiKey);
+        }
+
+        function headers() {
+            return apiKey ? {'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json'} : {'Content-Type': 'application/json'};
+        }
+
+        async function apiGet(path) {
+            const r = await fetch(API + path, {headers: headers()});
+            if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+            return r.json();
+        }
+
+        // Health check
+        async function checkHealth() {
+            try {
+                const h = await fetch(API + '/health').then(r => r.json());
+                document.getElementById('neo4jDot').className = 'dot ' + (h.neo4j === 'ok' ? 'ok' : 'err');
+                document.getElementById('redisDot').className = 'dot ' + (h.redis === 'ok' ? 'ok' : 'err');
+                document.getElementById('queueDepth').textContent = h.queue_depth ?? 0;
+            } catch(e) {
+                document.getElementById('neo4jDot').className = 'dot err';
+                document.getElementById('redisDot').className = 'dot err';
+            }
+        }
+
+        // Type icons
+        function typeIcon(type) {
+            const icons = {
+                person: '👤', user: '👤', human: '👤',
+                server: '🖥️', node: '🖥️', computer: '🖥️', machine: '🖥️',
+                software: '📦', application: '📦', app: '📦', tool: '🔧',
+                model: '🧠', llm: '🧠', ai: '🧠',
+                location: '📍', place: '📍',
+                organization: '🏢', company: '🏢',
+                concept: '💡', idea: '💡',
+                config: '⚙️', setting: '⚙️',
+                file: '📄', document: '📄',
+                network: '🌐', service: '🔌',
+            };
+            return icons[type?.toLowerCase()] || '🔷';
+        }
+
+        function typeClass(type) {
+            const t = type?.toLowerCase();
+            if (['person','user','human'].includes(t)) return 'type-person';
+            if (['server','node','computer','machine'].includes(t)) return 'type-server';
+            if (['software','application','app','model','llm','ai'].includes(t)) return 'type-software';
+            if (['concept','idea'].includes(t)) return 'type-concept';
+            return 'type-default';
+        }
+
+        // Load all entities (via search)
+        async function loadEntities(query = '') {
+            const list = document.getElementById('entityList');
+            list.innerHTML = '<div class="loading"><span class="spinner"></span> Loading...</div>';
+            try {
+                // Use multiple broad searches to populate entity list
+                const searches = query ? [query] : ['GLM', 'ollama', 'hermes', 'spark', 'docker', 'model', 'server', 'config', 'port', 'deploy'];
+                const seen = new Map();
+                for (const q of searches) {
+                    try {
+                        const data = await apiGet('/search?query=' + encodeURIComponent(q) + '&limit=20');
+                        for (const r of (data.results || [])) {
+                            // Parse entity names from statement: "Subject predicate Object"
+                            const stmt = r.statement || '';
+                            const parts = stmt.split(/\s+/);
+                            if (parts.length >= 2) {
+                                // Subject is usually the first word(s) before a predicate
+                                const subjectName = parts[0];
+                                if (subjectName && !seen.has(subjectName)) {
+                                    seen.set(subjectName, {id: subjectName, name: subjectName, type: 'entity', fact_count: 1});
+                                }
+                            }
+                        }
+                    } catch(e) { /* skip failed searches */ }
+                    if (seen.size >= 50) break;
+                }
+                allEntities = Array.from(seen.values());
+                renderEntityList(allEntities);
+                updateStats();
+            } catch(e) {
+                list.innerHTML = '<div class="empty">Error loading entities.<br><span style="font-size:12px">' + e.message + '</span></div>';
+            }
+        }
+
+        function renderEntityList(entities) {
+            const list = document.getElementById('entityList');
+            if (entities.length === 0) {
+                list.innerHTML = '<div class="empty">No entities found</div>';
+                return;
+            }
+            list.innerHTML = entities.map(e => `
+                <div class="entity-item ${currentEntity === e.id ? 'active' : ''}" onclick="loadEntity('${e.id}', '${e.name}', '${e.type}')">
+                    <span class="entity-icon">${typeIcon(e.type)}</span>
+                    <span class="entity-name">${e.name}</span>
+                    <span class="entity-type">${e.type}</span>
+                </div>
+            `).join('');
+        }
+
+        function searchEntities() {
+            const q = document.getElementById('entitySearch').value.toLowerCase();
+            if (!q) { renderEntityList(allEntities); return; }
+            const filtered = allEntities.filter(e =>
+                e.name.toLowerCase().includes(q) || e.type.toLowerCase().includes(q)
+            );
+            renderEntityList(filtered);
+        }
+
+        async function updateStats() {
+            try {
+                const data = await apiGet('/circuit-breaker');
+                document.getElementById('entityCount').textContent = allEntities.length + ' entities';
+                document.getElementById('factCount').textContent = (data.success_count || 0) + ' ops';
+            } catch(e) {}
+        }
+
+        // Load entity detail
+        async function loadEntity(id, name, type) {
+            currentEntity = id;
+            // Update active state
+            document.querySelectorAll('.entity-item').forEach(el => el.classList.remove('active'));
+            const main = document.getElementById('mainContent');
+            main.innerHTML = '<div class="loading"><span class="spinner"></span> Loading entity...</div>';
+
+            try {
+                // Search for facts about this entity
+                const data = await apiGet('/search?query=' + encodeURIComponent(name || id) + '&limit=50');
+                const facts = (data.results || []).filter(f => {
+                    const stmt = f.statement || '';
+                    return stmt.toLowerCase().startsWith((name || id).toLowerCase());
+                });
+                // Build entity view from search results
+                renderEntityFromFacts(name || id, type || 'entity', facts);
+            } catch(e) {
+                main.innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+            }
+        }
+
+        function renderEntityFromFacts(name, type, facts) {
+            const main = document.getElementById('mainContent');
+            main.innerHTML = `
+                <div class="entity-header">
+                    <div class="breadcrumb">
+                        <a onclick="location.href='/wiki'">Wiki</a>
+                        <span class="sep">/</span>
+                        <span>${type}</span>
+                        <span class="sep">/</span>
+                        <span>${name}</span>
+                    </div>
+                    <div class="entity-title">
+                        <span style="font-size:32px">${typeIcon(type)}</span>
+                        <h1>${name}</h1>
+                        <span class="type-badge ${typeClass(type)}">${type}</span>
+                    </div>
+                </div>
+
+                <div class="tab-bar">
+                    <button class="tab-btn active" onclick="switchTab(event, 'facts')">📋 Facts (${facts.length})</button>
+                    <button class="tab-btn" onclick="switchTab(event, 'graph')">🌐 Graph</button>
+                    <button class="tab-btn" onclick="switchTab(event, 'timeline')">📅 Timeline</button>
+                </div>
+
+                <div class="tab-panel active" id="panel-facts">
+                    ${facts.length === 0 ? '<div class="empty">No facts found</div>' :
+                    facts.map(f => {
+                        const stmt = f.statement || '';
+                        const parts = stmt.split(' ');
+                        const predIdx = parts.findIndex(p => p.includes('_') || ['runs','has','is','located','manufactured','uses','configured','rejected','deployed'].some(k => p.toLowerCase().includes(k)));
+                        const pred = predIdx >= 0 ? parts[predIdx] : '—';
+                        const obj = predIdx >= 0 ? parts.slice(predIdx + 1).join(' ') : stmt;
+                        const cert = f.certainty || 1.0;
+                        const certPct = Math.round(cert * 100);
+                        const certClass = cert < 0.5 ? 'spec' : cert < 0.8 ? 'inf' : '';
+                        const date = f.valid_at ? new Date(f.valid_at).toLocaleDateString() : '';
+
+                        return `
+                            <div class="fact-card">
+                                <div class="fact-statement">
+                                    <strong>${name}</strong>
+                                    <span class="fact-meta"><span class="pred">${pred}</span></span>
+                                    <code style="background:rgba(0,0,0,0.3);padding:1px 4px;border-radius:3px;font-size:12px">${obj}</code>
+                                </div>
+                                <div class="fact-meta">
+                                    <span class="cert ${certClass}">${certPct}% certain</span>
+                                    <span class="src">${f.source || 'unknown'}</span>
+                                    <span class="time">${date}</span>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+
+                <div class="tab-panel" id="panel-graph">
+                    <div class="graph-container">
+                        ${renderGraph(name, facts.map(f => ({...f, object_name: (f.statement||'').split(' ').slice(1).join(' '), object_entity: (f.statement||'').split(' ').slice(1).join(' '), predicate: (f.statement||'').split(' ')[1] || '—'})))}
+                    </div>
+                </div>
+
+                <div class="tab-panel" id="panel-timeline">
+                    <div class="timeline">
+                        ${renderTimeline(facts.map(f => ({...f, subject_name: name, predicate: (f.statement||'').split(' ')[1] || '—', object_name: (f.statement||'').split(' ').slice(2).join(' ')})))}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderFact(f) {
+            const cert = f.certainty || 1.0;
+            const certPct = Math.round(cert * 100);
+            const certClass = cert < 0.5 ? 'spec' : cert < 0.8 ? 'inf' : '';
+            const state = f.epistemic_state || 'active';
+            const stateClass = `state-${state}`;
+            const stateLabel = state === 'active' ? '' : `<span class="fact-state ${stateClass}">${state}</span>`;
+            const objLink = f.object_entity
+                ? `<span class="fact-link" onclick="loadEntity('${f.object_entity}','${f.object_name || f.object}','${f.object_type || 'entity'}')">${f.object_name || f.object}</span>`
+                : `<code style="background:rgba(0,0,0,0.3);padding:1px 4px;border-radius:3px;font-size:12px">${f.object}</code>`;
+
+            return `
+                <div class="fact-card">
+                    <div class="fact-statement">
+                        <strong>${f.subject_name || f.subject}</strong>
+                        <span class="fact-meta"><span class="pred">${f.predicate}</span></span>
+                        ${objLink}
+                        ${stateLabel}
+                    </div>
+                    <div class="fact-meta">
+                        <span class="cert ${certClass}">${certPct}% certain</span>
+                        <span class="src">${f.assertion_source || 'unknown'}</span>
+                        <span class="time">${f.valid_at ? 'Valid: ' + new Date(f.valid_at).toLocaleDateString() : 'N/A'}</span>
+                        <span class="time">${f.recorded_at ? 'Recorded: ' + new Date(f.recorded_at).toLocaleDateString() : ''}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderGraph(centerName, facts) {
+            // Simple radial graph
+            const cx = 250, cy = 250;
+            const radius = 160;
+            const nodes = [{name: centerName, x: cx, y: cy, center: true, id: 'center'}];
+            const edges = [];
+            const seen = new Map();
+
+            facts.forEach((f, i) => {
+                const objName = f.object_name || f.object;
+                if (!objName || objName.length > 30) return;
+                if (!seen.has(objName)) {
+                    const angle = (seen.size / Math.min(facts.length, 12)) * Math.PI * 2;
+                    seen.set(objName, {
+                        name: objName,
+                        x: cx + Math.cos(angle) * radius,
+                        y: cy + Math.sin(angle) * radius,
+                        id: f.object_entity || objName,
+                        type: f.object_type
+                    });
+                }
+                const node = seen.get(objName);
+                edges.push({x1: cx, y1: cy, x2: node.x, y2: node.y, pred: f.predicate});
+            });
+            nodes.push(...Array.from(seen.values()).slice(0, 12));
+
+            return `
+                <svg class="graph-svg" viewBox="0 0 500 500">
+                    ${edges.map(e => `
+                        <line class="graph-edge" x1="${e.x1}" y1="${e.y1}" x2="${e.x2}" y2="${e.y2}"/>
+                        <text x="${(e.x1+e.x2)/2}" y="${(e.y1+e.y2)/2}" class="graph-label" text-anchor="middle">${e.pred}</text>
+                    `).join('')}
+                    ${nodes.map(n => `
+                        <g class="graph-node ${n.center ? 'graph-center' : ''}" onclick="${n.id && n.id !== 'center' ? `loadEntity('${n.id}','${n.name}','${n.type || 'entity'}')` : ''}">
+                            <circle cx="${n.x}" cy="${n.y}" r="${n.center ? 12 : 8}" fill="${n.center ? 'var(--accent)' : 'var(--surface-hover)'}" stroke="${n.center ? 'var(--accent)' : 'var(--border)'}" stroke-width="2"/>
+                            <text x="${n.x}" y="${n.y - 16}" class="graph-label" text-anchor="middle">${n.name.substring(0,20)}</text>
+                        </g>
+                    `).join('')}
+                </svg>
+            `;
+        }
+
+        function renderTimeline(facts) {
+            const sorted = facts.filter(f => f.valid_at || f.recorded_at)
+                .sort((a, b) => {
+                    const da = new Date(a.valid_at || a.recorded_at || 0);
+                    const db = new Date(b.valid_at || b.recorded_at || 0);
+                    return db - da;
+                });
+            if (sorted.length === 0) return '<div class="empty">No temporal data</div>';
+            return sorted.map(f => {
+                const state = f.epistemic_state || 'active';
+                const date = f.valid_at ? new Date(f.valid_at).toLocaleDateString() : (f.recorded_at ? new Date(f.recorded_at).toLocaleDateString() : 'Unknown date');
+                return `
+                    <div class="timeline-item ${state}">
+                        <div class="timeline-date">${date}</div>
+                        <div class="fact-statement">
+                            <strong>${f.subject_name || f.subject}</strong>
+                            <span style="color:var(--accent);font-family:var(--mono);font-size:11px">${f.predicate}</span>
+                            ${f.object_name || f.object}
+                        </div>
+                        <div class="fact-meta">
+                            <span class="cert">${Math.round((f.certainty||1)*100)}%</span>
+                            <span class="src">${f.assertion_source || 'unknown'}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function switchTab(evt, tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            evt.target.classList.add('active');
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById('panel-' + tab).classList.add('active');
+        }
+
+        // Init
+        checkHealth();
+        setInterval(checkHealth, 30000);
+        loadEntities();
+    </script>
+</body>
+</html>

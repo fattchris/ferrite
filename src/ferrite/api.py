@@ -52,6 +52,7 @@ _PUBLIC_ENDPOINTS = {
     "/", "/health", "/metrics", "/metrics/prometheus",
     "/circuit-breaker", "/circuit-breaker/reset",
     "/install", "/install/generate-secrets", "/install/verify",
+    "/wiki",
 }
 # Key management endpoints require admin scope.
 _ADMIN_ENDPOINTS = {"/keys", "/keys/{key_id}/revoke"}
@@ -825,6 +826,14 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         if os.path.isfile(installer):
             return FileResponse(installer)
         return JSONResponse({"detail": "Installer not available"}, status_code=404)
+
+    @app.get("/wiki", include_in_schema=False)
+    async def wiki_page():
+        """Serve the Knowledge Explorer (Obsidian-like wiki view)."""
+        wiki = os.path.join(os.path.dirname(__file__), "static", "wiki.html")
+        if os.path.isfile(wiki):
+            return FileResponse(wiki)
+        return JSONResponse({"detail": "Wiki not available"}, status_code=404)
 
     @app.post("/install/generate-secrets", include_in_schema=False)
     async def generate_secrets(request: Request):
