@@ -478,6 +478,41 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         return SearchResponse(results=results[:limit])
 
 
+    @app.get("/entities")
+    async def list_entities(
+        limit: int = Query(100, le=500),
+        offset: int = Query(0, ge=0),
+    ):
+        """List all entities with fact counts."""
+        if pipeline is None:
+            raise HTTPException(status_code=503, detail="Pipeline not available")
+        with pipeline.driver.session() as session:
+            result = session.run(
+                """
+                MATCH (e:Entity)
+                OPTIONAL MATCH (e)<-[:SUBJECT]-(f:Fact)
+                RETURN e.id AS id, e.type AS type, e.name AS name,
+                       e.summary AS summary, count(f) AS fact_count
+                ORDER BY fact_count DESC, e.name ASC
+                SKIP $offset LIMIT $limit
+                """,
+                offset=offset,
+                limit=limit,
+            )
+            entities = [
+                {
+                    "id": r["id"],
+                    "type": r["type"],
+                    "name": r["name"],
+                    "summary": r["summary"],
+                    "fact_count": r["fact_count"],
+                }
+                for r in result
+            ]
+            # Get total count
+            total = session.run("MATCH (e:Entity) RETURN count(e) AS c").single()["c"]
+        return {"entities": entities, "total": total}
+
     @app.get("/entities/{entity_id}")
     async def get_entity(
         entity_id: str,

@@ -498,33 +498,22 @@
             return 'type-default';
         }
 
-        // Load all entities (via search)
+        // Load all entities (via /entities API)
         async function loadEntities(query = '') {
             const list = document.getElementById('entityList');
             list.innerHTML = '<div class="loading"><span class="spinner"></span> Loading...</div>';
             try {
-                // Use multiple broad searches to populate entity list
-                const searches = query ? [query] : ['GLM', 'ollama', 'hermes', 'spark', 'docker', 'model', 'server', 'config', 'port', 'deploy'];
-                const seen = new Map();
-                for (const q of searches) {
-                    try {
-                        const data = await apiGet('/search?query=' + encodeURIComponent(q) + '&limit=20');
-                        for (const r of (data.results || [])) {
-                            // Parse entity names from statement: "Subject predicate Object"
-                            const stmt = r.statement || '';
-                            const parts = stmt.split(/\s+/);
-                            if (parts.length >= 2) {
-                                // Subject is usually the first word(s) before a predicate
-                                const subjectName = parts[0];
-                                if (subjectName && !seen.has(subjectName)) {
-                                    seen.set(subjectName, {id: subjectName, name: subjectName, type: 'entity', fact_count: 1});
-                                }
-                            }
-                        }
-                    } catch(e) { /* skip failed searches */ }
-                    if (seen.size >= 50) break;
+                const data = await apiGet('/entities?limit=500');
+                let entities = data.entities || [];
+                if (query) {
+                    const q = query.toLowerCase();
+                    entities = entities.filter(e =>
+                        (e.name || '').toLowerCase().includes(q) ||
+                        (e.id || '').toLowerCase().includes(q) ||
+                        (e.type || '').toLowerCase().includes(q)
+                    );
                 }
-                allEntities = Array.from(seen.values());
+                allEntities = entities;
                 renderEntityList(allEntities);
                 updateStats();
             } catch(e) {
