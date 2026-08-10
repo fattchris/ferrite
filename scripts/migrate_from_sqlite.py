@@ -90,14 +90,36 @@ def get_session_messages(conn: sqlite3.Connection, session_id: str) -> list[dict
     return [dict(zip([d[0] for d in cur.description], row)) for row in cur]
 
 
+def _neo4j_retry(driver, cypher, **params):
+    """Run a Neo4j query with retry logic for transient errors.
+
+    Retries on ServiceUnavailable and DatabaseError (which can happen
+    during heavy writes or when Neo4j needs a moment to recover).
+    """
+    import neo4j.exceptions
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with driver.session() as s:
+                result = s.run(cypher, **params)
+                return result.single()
+        except (neo4j.exceptions.ServiceUnavailable, neo4j.exceptions.DatabaseError) as e:
+            if attempt < max_retries - 1:
+                logger.warning("Neo4j transient error (attempt %d/%d): %s", attempt + 1, max_retries, e)
+                import time
+                time.sleep(5 * (attempt + 1))  # 5s, 10s, 15s backoff
+            else:
+                raise
+
+
 def check_episode_exists(driver, episode_id: str) -> bool:
     """Check if an episode was already ingested (idempotency)."""
-    with driver.session() as s:
-        result = s.run(
-            "MATCH (e:Episode {id: $eid}) RETURN count(e) AS c",
-            eid=episode_id,
-        )
-        return result.single()["c"] > 0
+    record = _neo4j_retry(
+        driver,
+        "MATCH (e:Episode {id: $eid}) RETURN count(e) AS c",
+        eid=episode_id,
+    )
+    return record["c"] > 0 if record else False
 
 
 def session_to_episodes(session: dict, messages: list[dict]) -> list[Episode]:
@@ -272,14 +294,13 @@ def migrate(
                 pipe.process_next()
 
                 # Count facts
-                with driver.session() as s:
-                    result = s.run(
-                        "MATCH (ep:Episode {id: $ep_id})<-[:SOURCED_FROM]-(f:Fact) "
-                        "RETURN count(f) AS c",
-                        ep_id=ep.id,
-                    )
-                    record = result.single()
-                    fact_count = record["c"] if record else 0
+                record = _neo4j_retry(
+                    driver,
+                    "MATCH (ep:Episode {id: $ep_id})<-[:SOURCED_FROM]-(f:Fact) "
+                    "RETURN count(f) AS c",
+                    ep_id=ep.id,
+                )
+                fact_count = record["c"] if record else 0
 
                 stats["episodes_created"] += 1
                 stats["facts_written"] += fact_count

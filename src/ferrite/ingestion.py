@@ -502,7 +502,8 @@ class IngestionPipeline:
             # Link subject
             session.run(
                 """
-                MATCH (f:Fact {id: $fact_id}), (e:Entity {id: $entity_id})
+                MATCH (f:Fact {id: $fact_id})
+                MATCH (e:Entity {id: $entity_id})
                 CREATE (f)-[:SUBJECT]->(e)
                 """,
                 fact_id=fact.id,
@@ -552,7 +553,8 @@ class IngestionPipeline:
             # Link provenance
             session.run(
                 """
-                MATCH (f:Fact {id: $fact_id}), (ep:Episode {id: $episode_id})
+                MATCH (f:Fact {id: $fact_id})
+                MATCH (ep:Episode {id: $episode_id})
                 CREATE (f)-[:SOURCED_FROM]->(ep)
                 """,
                 fact_id=fact.id,
