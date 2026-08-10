@@ -293,7 +293,10 @@ class IngestionPipeline:
                         entity_type=ent_data.type,
                         summary=ent_data.summary,
                     )
-                    entity_cache[name] = entity
+                    if entity is not None:
+                        entity_cache[name] = entity
+                    else:
+                        logger.warning(f"Entity resolution returned None for: {name}")
 
             # Also canonicalize subjects and objects referenced in facts
             for fact_data in extraction.facts:
@@ -302,7 +305,8 @@ class IngestionPipeline:
                     entity = resolve_entity(
                         self.driver, subj_name, self.embedding_func
                     )
-                    entity_cache[subj_name] = entity
+                    if entity is not None:
+                        entity_cache[subj_name] = entity
 
                 if fact_data.object_type == "entity":
                     obj_name = fact_data.object
@@ -310,7 +314,8 @@ class IngestionPipeline:
                         entity = resolve_entity(
                             self.driver, obj_name, self.embedding_func
                         )
-                        entity_cache[obj_name] = entity
+                        if entity is not None:
+                            entity_cache[obj_name] = entity
 
             # Step 3: Write facts to Neo4j with temporal logic
             with self.driver.session() as session:
@@ -389,7 +394,7 @@ class IngestionPipeline:
         subject_entity = entity_cache.get(fact_data.subject)
         if subject_entity is None:
             logger.warning(
-                f"Subject entity not found for: {fact_data.subject}"
+                f"Subject entity not found for: {fact_data.subject} — skipping fact"
             )
             return
 

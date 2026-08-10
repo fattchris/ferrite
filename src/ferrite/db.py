@@ -24,6 +24,15 @@ def get_driver():
 
     Creates the driver on first call (lazy init), guarded by a lock
     so concurrent threads don't create duplicates.
+
+    Connection pool is tuned for resilience:
+    - max_connection_lifetime=300s: reaper culls stale connections before
+      they can be handed out, preventing "defunct connection" errors after
+      Neo4j restarts.
+    - connection_acquisition_timeout=30s: bounded wait instead of infinite
+      hang when the pool is exhausted under write bursts.
+    - max_connection_pool_size=50: enough for concurrent reads during
+      migration without starving the API consumer.
     """
     global _driver
     if _driver is None:
@@ -34,6 +43,9 @@ def get_driver():
                 _driver = GraphDatabase.driver(
                     settings.NEO4J_URI,
                     auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
+                    max_connection_lifetime=300,        # 5 min — cull stale conns
+                    max_connection_pool_size=50,         # enough for migration + API
+                    connection_acquisition_timeout=30,   # bounded wait, not infinite
                 )
                 logger.info(
                     "Neo4j driver created for %s (user=%s)",

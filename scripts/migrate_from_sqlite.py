@@ -49,6 +49,25 @@ logger = logging.getLogger("migrate")
 
 DEFAULT_DB = os.path.expanduser("~/ferrite/state.db")
 HERMES_DB = os.path.expanduser("~/.hermes/state.db")
+CHECKPOINT_FILE = "/tmp/ferrite-migration-checkpoint.json"
+
+
+def load_checkpoint() -> dict:
+    """Load checkpoint of completed session indices for fast resume."""
+    try:
+        with open(CHECKPOINT_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"completed_sessions": [], "last_index": 0}
+
+
+def save_checkpoint(checkpoint: dict) -> None:
+    """Persist checkpoint to disk for crash recovery."""
+    try:
+        with open(CHECKPOINT_FILE, "w") as f:
+            json.dump(checkpoint, f)
+    except OSError as e:
+        logger.warning("Failed to save checkpoint: %s", e)
 
 
 def deterministic_episode_id(session_id: str, first_ts: float) -> str:
@@ -93,21 +112,45 @@ def get_session_messages(conn: sqlite3.Connection, session_id: str) -> list[dict
 def _neo4j_retry(driver, cypher, **params):
     """Run a Neo4j query with retry logic for transient errors.
 
-    Retries on ServiceUnavailable and DatabaseError (which can happen
-    during heavy writes or when Neo4j needs a moment to recover).
+    Retries on a broad set of transient errors:
+    - ServiceUnavailable: Neo4j down or restarting
+    - DatabaseError: internal Neo4j error during heavy writes
+    - OSError: socket-level errors ("No data", "Connection reset") from
+      stale pooled connections after a Neo4j restart
+    - TransientError: temporary transaction conflicts
+
+    On retry, forces the driver to drop its stale connection pool by
+    calling driver.verify_connectivity() before retrying.
     """
     import neo4j.exceptions
-    max_retries = 3
+    import time
+
+    max_retries = 5
+    transient = (
+        neo4j.exceptions.ServiceUnavailable,
+        neo4j.exceptions.DatabaseError,
+        neo4j.exceptions.TransientError,
+        OSError,  # socket-level: "No data", "Connection reset by peer"
+    )
+
     for attempt in range(max_retries):
         try:
             with driver.session() as s:
                 result = s.run(cypher, **params)
                 return result.single()
-        except (neo4j.exceptions.ServiceUnavailable, neo4j.exceptions.DatabaseError) as e:
+        except transient as e:
             if attempt < max_retries - 1:
-                logger.warning("Neo4j transient error (attempt %d/%d): %s", attempt + 1, max_retries, e)
-                import time
-                time.sleep(5 * (attempt + 1))  # 5s, 10s, 15s backoff
+                wait = 2 ** attempt  # 1s, 2s, 4s, 8s exponential backoff
+                logger.warning(
+                    "Neo4j transient error (attempt %d/%d): %s — retrying in %ds",
+                    attempt + 1, max_retries, e, wait,
+                )
+                # Force pool to discard stale connections
+                try:
+                    driver.verify_connectivity()
+                except Exception:
+                    pass  # verify itself may fail; the retry will catch it
+                time.sleep(wait)
             else:
                 raise
 
@@ -214,8 +257,29 @@ def migrate(
     # Connect to Neo4j + Redis
     from neo4j import GraphDatabase
 
-    driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
-    driver.verify_connectivity()
+    driver = GraphDatabase.driver(
+        neo4j_uri,
+        auth=(neo4j_user, neo4j_password),
+        max_connection_lifetime=300,
+        max_connection_pool_size=50,
+        connection_acquisition_timeout=30,
+    )
+
+    # Wait for Neo4j to be ready (up to 120s)
+    import time as _time
+    for attempt in range(60):
+        try:
+            driver.verify_connectivity()
+            break
+        except Exception as e:
+            if attempt < 59:
+                logger.warning(
+                    "Neo4j not ready (attempt %d/60): %s — waiting 2s",
+                    attempt + 1, e,
+                )
+                _time.sleep(2)
+            else:
+                raise RuntimeError(f"Neo4j not available after 120s: {e}")
     logger.info("Connected to Neo4j")
 
     # LLM client for extraction
@@ -250,6 +314,9 @@ def migrate(
     logger.info("Ingestion pipeline ready")
 
     # Migrate
+    checkpoint = load_checkpoint()
+    completed_sessions = set(checkpoint.get("completed_sessions", []))
+
     stats = {
         "sessions_processed": 0,
         "sessions_skipped": 0,
@@ -262,7 +329,11 @@ def migrate(
     for i, session in enumerate(sessions):
         session_id = session["id"]
         title = session.get("title", "(untitled)")
-        session.get("message_count", 0)
+
+        # Skip sessions already completed per checkpoint
+        if session_id in completed_sessions:
+            stats["sessions_skipped"] += 1
+            continue
 
         # Get messages
         messages = get_session_messages(conn, session_id)
@@ -272,7 +343,7 @@ def migrate(
         # Build episodes
         episodes = session_to_episodes(session, messages)
 
-        # Check if already migrated
+        # Check if already migrated (Neo4j idempotency)
         all_exist = True
         for ep in episodes:
             if not check_episode_exists(driver, ep.id):
@@ -281,6 +352,8 @@ def migrate(
 
         if all_exist:
             stats["sessions_skipped"] += 1
+            completed_sessions.add(session_id)
+            save_checkpoint({"completed_sessions": list(completed_sessions), "last_index": i})
             continue
 
         # Ingest
@@ -293,14 +366,18 @@ def migrate(
                 pipe.enqueue(ep)
                 pipe.process_next()
 
-                # Count facts
-                record = _neo4j_retry(
-                    driver,
-                    "MATCH (ep:Episode {id: $ep_id})<-[:SOURCED_FROM]-(f:Fact) "
-                    "RETURN count(f) AS c",
-                    ep_id=ep.id,
-                )
-                fact_count = record["c"] if record else 0
+                # Count facts (non-fatal if this fails)
+                try:
+                    record = _neo4j_retry(
+                        driver,
+                        "MATCH (ep:Episode {id: $ep_id})<-[:SOURCED_FROM]-(f:Fact) "
+                        "RETURN count(f) AS c",
+                        ep_id=ep.id,
+                    )
+                    fact_count = record["c"] if record else 0
+                except Exception as count_err:
+                    logger.debug("Fact count query failed for %s: %s", ep.id, count_err)
+                    fact_count = 0
 
                 stats["episodes_created"] += 1
                 stats["facts_written"] += fact_count
@@ -310,9 +387,11 @@ def migrate(
                 )
             except Exception as e:
                 stats["errors"] += 1
-                logger.error("  Episode %s failed: %s", ep.id, e)
+                logger.error("  Episode %s failed: %s", ep.id, e, exc_info=True)
 
         stats["sessions_processed"] += 1
+        completed_sessions.add(session_id)
+        save_checkpoint({"completed_sessions": list(completed_sessions), "last_index": i})
 
         # Progress
         if (i + 1) % 50 == 0:
