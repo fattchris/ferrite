@@ -132,16 +132,29 @@ def parse_extraction_response(response: str) -> dict:
     for fact in data.get("facts", []):
         if not isinstance(fact, dict):
             continue
-        if "subject" not in fact or "predicate" not in fact or "object" not in fact:
-            logger.warning(f"Skipping invalid fact (missing fields): {fact}")
+        # Guard against None values in required fields
+        subj = fact.get("subject")
+        pred = fact.get("predicate")
+        obj = fact.get("object")
+        if not subj or not isinstance(subj, str) or not subj.strip():
             continue
+        if not pred or not isinstance(pred, str) or not pred.strip():
+            continue
+        if obj is None:
+            continue
+        # Ensure object is a string
+        if not isinstance(obj, str):
+            obj = str(obj)
 
-        if not is_valid_predicate(fact["predicate"]):
+        if not is_valid_predicate(pred):
             logger.warning(
-                f"Skipping fact with unknown predicate '{fact['predicate']}'"
+                f"Skipping fact with unknown predicate '{pred}'"
             )
             continue
 
+        fact["subject"] = subj.strip()
+        fact["predicate"] = pred.strip()
+        fact["object"] = obj.strip() if isinstance(obj, str) else str(obj)
         fact.setdefault("object_type", "entity")
         fact.setdefault("certainty", "stated")
         fact.setdefault("assertion_source", "model")
