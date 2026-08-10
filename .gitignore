@@ -35,3 +35,4 @@ adws/
 backups/
 *.bak
 Caddyfile.bak
+data/files/
