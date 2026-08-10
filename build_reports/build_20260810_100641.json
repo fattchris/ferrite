@@ -1,0 +1,107 @@
+{
+  "timestamp": "2026-08-10T10:06:41.232199",
+  "action": "tests_failing",
+  "audit": {
+    "audit_time": "2026-08-10T10:06:19.748305",
+    "total_gaps": 12,
+    "resolved": 12,
+    "remaining": 0,
+    "open_gaps": [],
+    "resolved_gaps": [
+      {
+        "id": "GAP-001",
+        "spec": "\u00a74.1",
+        "title": "MCP HTTP transport at /mcp/",
+        "resolved": true,
+        "build_instructions": "Add HTTP transport to the MCP server. The spec requires both HTTP at /mcp/ and stdio. Currently only stdio is implemented. Use FastMCP's streamable_http transport or mount the MCP server at /mcp/ in the FastAPI app. File: src/ferrite/mcp_server.py (and optionally src/ferrite/api.py for mounting)."
+      },
+      {
+        "id": "GAP-002",
+        "spec": "\u00a74.2",
+        "title": "get_provenance MCP tool",
+        "resolved": true,
+        "build_instructions": "Add get_provenance MCP tool. Returns the provenance chain: agent \u2192 channel \u2192 session \u2192 episode \u2192 source for a given fact ID. Cross-namespace chains truncate with redacted_beyond_this_point. Files: src/ferrite/mcp_server.py (register tool), src/ferrite/query.py (add get_provenance function). Query: traverse SOURCED_FROM edges from Fact \u2192 Episode \u2192 Session, collect agent/channel metadata."
+      },
+      {
+        "id": "GAP-003",
+        "spec": "\u00a74.2",
+        "title": "list_episodes MCP tool",
+        "resolved": true,
+        "build_instructions": "Add list_episodes MCP tool. Returns recent episodes ingested. Parameters: limit (default 20), since (datetime, optional). File: src/ferrite/mcp_server.py (register tool), src/ferrite/query.py (add list_episodes function). Query: MATCH (e:Episode) WHERE e.recorded_at >= $since RETURN e ORDER BY e.recorded_at DESC LIMIT $limit"
+      },
+      {
+        "id": "GAP-004",
+        "spec": "\u00a76.3",
+        "title": "CI grep test banning raw MATCH strings",
+        "resolved": true,
+        "build_instructions": "Add a CI step in .github/workflows/ci.yml that greps src/ferrite/*.py for raw 'MATCH' strings (banned per \u00a76.3 \u2014 all Cypher must go through a query builder that injects namespace filters). The grep should fail the build if raw MATCH is found in handler code (excluding test files and the query.py builder itself). Example: grep -rn 'MATCH' src/ferrite/*.py | grep -v query.py | grep -v test_ && exit 1 || true"
+      },
+      {
+        "id": "GAP-005",
+        "spec": "\u00a76.1",
+        "title": "SQLite keys.db for per-agent API keys",
+        "resolved": true,
+        "build_instructions": "Already implemented in key_store.py."
+      },
+      {
+        "id": "GAP-006",
+        "spec": "\u00a76.2",
+        "title": "Key management API (POST /keys, revoke, list)",
+        "resolved": true,
+        "build_instructions": "Already implemented in api.py."
+      },
+      {
+        "id": "GAP-007",
+        "spec": "\u00a76.4",
+        "title": "Read-Your-Own-Writes (LRU pending_ingestion)",
+        "resolved": true,
+        "build_instructions": "Already implemented in ingestion.py."
+      },
+      {
+        "id": "GAP-008",
+        "spec": "\u00a77.1",
+        "title": "Redis queue + in-proc async consumer",
+        "resolved": true,
+        "build_instructions": "Already implemented in ingestion.py."
+      },
+      {
+        "id": "GAP-009",
+        "spec": "\u00a77.2.1",
+        "title": "Session quality gate (\u22652 turns, error state check)",
+        "resolved": true,
+        "build_instructions": "Already implemented in quality_gates.py."
+      },
+      {
+        "id": "GAP-010",
+        "spec": "\u00a77.2.3",
+        "title": "SUPERSEDES edge for functional predicates",
+        "resolved": true,
+        "build_instructions": "Already implemented in temporal.py + ingestion.py."
+      },
+      {
+        "id": "GAP-011",
+        "spec": "\u00a710",
+        "title": "Backup/restore scripts (non-stub)",
+        "resolved": true,
+        "build_instructions": "Already implemented in scripts/backup.sh + restore.sh."
+      },
+      {
+        "id": "GAP-012",
+        "spec": "\u00a715.2",
+        "title": "ferrite.yaml config file",
+        "resolved": true,
+        "build_instructions": "Already implemented at ~/ferrite/ferrite.yaml."
+      }
+    ]
+  },
+  "tests": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0,
+    "failing_tests": [],
+    "exit_code": 1,
+    "status": "fail",
+    "output": "hEnabled::test_public_endpoints_no_auth\ntests/test_api_auth.py::TestAuthEnabled::test_protected_endpoint_no_auth\ntests/test_api_auth.py::TestAuthEnabled::test_protected_endpoint_with_bearer\ntests/test_api_auth.py::TestAuthEnabled::test_protected_endpoint_with_x_api_key\ntests/test_api_auth.py::TestAuthEnabled::test_protected_endpoint_wrong_key\ntests/test_api_auth.py::TestCircuitBreakerEndpoint::test_get_circuit_breaker_state\ntests/test_api_auth.py::TestCircuitBreakerEndpoint::test_reset_circuit_breaker\n  /Users/fontes/ferrite/src/ferrite/api.py:159: DeprecationWarning: \n          on_event is deprecated, use lifespan event handlers instead.\n  \n          Read more about it in the\n          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).\n          \n    @app.on_event(\"startup\")\n\nsrc/ferrite/api.py:167\ntests/test_api_auth.py::TestAuthDisabled::test_health_endpoint_no_auth\ntests/test_api_auth.py::TestAuthEnabled::test_public_endpoints_no_auth\ntests/test_api_auth.py::TestAuthEnabled::test_protected_endpoint_no_auth\ntests/test_api_auth.py::TestAuthEnabled::test_protected_endpoint_with_bearer\ntests/test_api_auth.py::TestAuthEnabled::test_protected_endpoint_with_x_api_key\ntests/test_api_auth.py::TestAuthEnabled::test_protected_endpoint_wrong_key\ntests/test_api_auth.py::TestCircuitBreakerEndpoint::test_get_circuit_breaker_state\ntests/test_api_auth.py::TestCircuitBreakerEndpoint::test_reset_circuit_breaker\n  /Users/fontes/ferrite/src/ferrite/api.py:167: DeprecationWarning: \n          on_event is deprecated, use lifespan event handlers instead.\n  \n          Read more about it in the\n          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).\n          \n    @app.on_event(\"shutdown\")\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n=========================== short test summary info ============================\nERROR tests/test_integration.py::test_full_pipeline_with_llm - neo4j.exceptio...\n"
+  }
+}

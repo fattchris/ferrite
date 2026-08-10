@@ -38,6 +38,7 @@ FERRITE_SRC = os.path.expanduser("~/ferrite/src")
 if FERRITE_SRC not in sys.path:
     sys.path.insert(0, FERRITE_SRC)
 
+import neo4j.exceptions
 from ferrite.ingestion import IngestionPipeline  # noqa: E402
 from ferrite.models import Episode  # noqa: E402
 
@@ -343,55 +344,82 @@ def migrate(
         # Build episodes
         episodes = session_to_episodes(session, messages)
 
-        # Check if already migrated (Neo4j idempotency)
-        all_exist = True
-        for ep in episodes:
-            if not check_episode_exists(driver, ep.id):
-                all_exist = False
-                break
-
-        if all_exist:
-            stats["sessions_skipped"] += 1
-            completed_sessions.add(session_id)
-            save_checkpoint({"completed_sessions": list(completed_sessions), "last_index": i})
-            continue
-
-        # Ingest
-        for ep in episodes:
-            if check_episode_exists(driver, ep.id):
-                stats["episodes_skipped"] += 1
-                continue
-
+        # Top-level resilience: if Neo4j drops during this session,
+        # wait for it to come back instead of crashing the whole migration.
+        session_done = False
+        while not session_done:
             try:
-                pipe.enqueue(ep)
-                pipe.process_next()
+                # Check if already migrated (Neo4j idempotency)
+                all_exist = True
+                for ep in episodes:
+                    if not check_episode_exists(driver, ep.id):
+                        all_exist = False
+                        break
 
-                # Count facts (non-fatal if this fails)
-                try:
-                    record = _neo4j_retry(
-                        driver,
-                        "MATCH (ep:Episode {id: $ep_id})<-[:SOURCED_FROM]-(f:Fact) "
-                        "RETURN count(f) AS c",
-                        ep_id=ep.id,
-                    )
-                    fact_count = record["c"] if record else 0
-                except Exception as count_err:
-                    logger.debug("Fact count query failed for %s: %s", ep.id, count_err)
-                    fact_count = 0
+                if all_exist:
+                    stats["sessions_skipped"] += 1
+                    completed_sessions.add(session_id)
+                    save_checkpoint({"completed_sessions": list(completed_sessions), "last_index": i})
+                    session_done = True
+                    break
 
-                stats["episodes_created"] += 1
-                stats["facts_written"] += fact_count
-                logger.info(
-                    "  [%d/%d] %s — ep %s: %d facts",
-                    i + 1, len(sessions), title[:40], ep.id[:12], fact_count,
+                # Ingest
+                for ep in episodes:
+                    if check_episode_exists(driver, ep.id):
+                        stats["episodes_skipped"] += 1
+                        continue
+
+                    try:
+                        pipe.enqueue(ep)
+                        pipe.process_next()
+
+                        # Count facts (non-fatal if this fails)
+                        try:
+                            record = _neo4j_retry(
+                                driver,
+                                "MATCH (ep:Episode {id: $ep_id})<-[:SOURCED_FROM]-(f:Fact) "
+                                "RETURN count(f) AS c",
+                                ep_id=ep.id,
+                            )
+                            fact_count = record["c"] if record else 0
+                        except Exception as count_err:
+                            logger.debug("Fact count query failed for %s: %s", ep.id, count_err)
+                            fact_count = 0
+
+                        stats["episodes_created"] += 1
+                        stats["facts_written"] += fact_count
+                        logger.info(
+                            "  [%d/%d] %s — ep %s: %d facts",
+                            i + 1, len(sessions), title[:40], ep.id[:12], fact_count,
+                        )
+                    except Exception as e:
+                        stats["errors"] += 1
+                        logger.error("  Episode %s failed: %s", ep.id, e, exc_info=True)
+
+                stats["sessions_processed"] += 1
+                completed_sessions.add(session_id)
+                save_checkpoint({"completed_sessions": list(completed_sessions), "last_index": i})
+                session_done = True
+
+            except (neo4j.exceptions.ServiceUnavailable, neo4j.exceptions.TransientError, OSError) as e:
+                logger.warning(
+                    "Neo4j connection lost during session %s: %s — "
+                    "waiting 10s for recovery, then retrying",
+                    session_id, e,
                 )
-            except Exception as e:
-                stats["errors"] += 1
-                logger.error("  Episode %s failed: %s", ep.id, e, exc_info=True)
-
-        stats["sessions_processed"] += 1
-        completed_sessions.add(session_id)
-        save_checkpoint({"completed_sessions": list(completed_sessions), "last_index": i})
+                _time.sleep(10)
+                try:
+                    driver.verify_connectivity()
+                    logger.info("Neo4j reconnected, resuming")
+                except Exception:
+                    logger.warning("Neo4j still down, waiting another 30s")
+                    _time.sleep(30)
+                    try:
+                        driver.verify_connectivity()
+                        logger.info("Neo4j reconnected after extended wait")
+                    except Exception as e2:
+                        logger.error("Neo4j still down after 40s: %s", e2)
+                        raise RuntimeError(f"Neo4j unrecoverable: {e2}")
 
         # Progress
         if (i + 1) % 50 == 0:
