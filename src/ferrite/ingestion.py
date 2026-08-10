@@ -472,7 +472,7 @@ class IngestionPipeline:
         # Normal write
         self._write_fact(fact, subject_entity, object_value, object_type, episode, session)
 
-    @retry(max_attempts=3, backoff_base=0.5)
+    @retry(max_attempts=5, backoff_base=1.0)
     def _write_fact(
         self,
         fact: FactBase,

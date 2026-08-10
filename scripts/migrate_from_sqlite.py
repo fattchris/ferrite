@@ -328,7 +328,7 @@ def migrate(
 
     for i, session in enumerate(sessions):
         session_id = session["id"]
-        title = session.get("title", "(untitled)")
+        title = session.get("title") or "(untitled)"
 
         # Skip sessions already completed per checkpoint
         if session_id in completed_sessions:

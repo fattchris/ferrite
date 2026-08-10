@@ -20,11 +20,24 @@ T = TypeVar("T")
 # Default retryable exceptions for Neo4j and HTTP calls.
 # We retry on transient failures (timeouts, connection errors) but not on
 # data-level errors (ValueError, KeyError, etc.).
-_RETRYABLE_EXCEPTIONS = (
-    ConnectionError,
-    TimeoutError,
-    OSError,
-)
+# Includes neo4j.exceptions.ServiceUnavailable for stale connection recovery.
+try:
+    from neo4j.exceptions import ServiceUnavailable, TransientError, DatabaseError
+    _RETRYABLE_EXCEPTIONS = (
+        ConnectionError,
+        TimeoutError,
+        OSError,
+        ServiceUnavailable,
+        TransientError,
+        DatabaseError,
+    )
+except ImportError:
+    # Fallback if neo4j not installed (e.g., test env)
+    _RETRYABLE_EXCEPTIONS = (
+        ConnectionError,
+        TimeoutError,
+        OSError,
+    )
 
 
 def retry(
