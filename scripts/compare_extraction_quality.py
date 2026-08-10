@@ -11,17 +11,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from ferrite.extractor import extract
 
 
-def llm_client_factory(model_name, base_url, api_key):
+def llm_client_factory(model_name, base_url, api_key, disable_thinking=False):
     def llm_client(system_prompt: str, user_prompt: str) -> str:
-        payload = json.dumps({
+        payload_dict = {
             "model": model_name,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": 0.1,
+            "temperature": 0,
             "max_tokens": 16384,
-        }).encode()
+        }
+        if disable_thinking:
+            payload_dict["chat_template_kwargs"] = {"enable_thinking": False}
+        payload = json.dumps(payload_dict).encode()
         req = urllib.request.Request(
             f"{base_url}/v1/chat/completions",
             data=payload,
@@ -74,7 +77,7 @@ def main():
     print(f"Comparing GLM-5.2 vs DSV4-Flash on {len(sessions)} sessions\n")
 
     glm_client = llm_client_factory("glm-5.2", base_url, api_key)
-    dsv4_client = llm_client_factory("deepseek-v4-flash", base_url, api_key)
+    dsv4_client = llm_client_factory("deepseek-v4-flash", base_url, api_key, disable_thinking=True)
 
     results = []
     for i, s in enumerate(sessions):
