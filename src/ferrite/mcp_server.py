@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 
 # --- Config from env ---
 
-from .config import get_settings as _get_settings
+from .config import get_settings as _get_settings  # noqa: E402
 
 NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
@@ -76,7 +76,7 @@ NEO4J_PASSWORD = _get_settings().NEO4J_PASSWORD
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "")
 
-from .config import get_settings as _get_settings
+from .config import get_settings as _get_settings  # noqa: E402
 
 _settings = _get_settings()
 LITELLM_BASE_URL = _settings.LLM_BASE_URL

@@ -181,7 +181,9 @@ def parse_extraction_response(response: str) -> ExtractionResult:
     )
 
 
-def extract(content: str, llm_client: Optional[Callable[[str, str], str]] = None) -> ExtractionResult:
+def extract(
+    content: str, llm_client: Optional[Callable[[str, str], str]] = None
+) -> ExtractionResult:
     """Orchestrate LLM extraction: build prompt, call LLM, parse response.
 
     Args:

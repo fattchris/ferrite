@@ -209,7 +209,8 @@ def multi_hop_query(driver: Driver, entity_name: str, hops: int = 2) -> list[dic
               AND connected <> start
               AND connected.id IS NOT NULL
               AND length(path) <= $max_rels
-            WITH DISTINCT connected, collect(DISTINCT f) AS connecting_facts, length(path) AS hop_dist
+            WITH DISTINCT connected, collect(DISTINCT f) AS connecting_facts, \
+length(path) AS hop_dist
             UNWIND connecting_facts AS cf
             WITH connected, cf, hop_dist
             MATCH (cf)-[:OBJECT]->(obj)
@@ -645,7 +646,7 @@ def _inject_context_legacy(
                 if isinstance(ent, str) and ent.strip():
                     entity_names.add(ent.strip().lower())
     except Exception as e:
-        logger.debug(f"LLM entity extraction failed: {e}")  # Non-fatal — keyword extraction is the primary strategy
+        logger.debug(f"LLM entity extraction failed: {e}")  # Non-fatal
 
     if not entity_names:
         return []
@@ -751,7 +752,7 @@ def _inject_context_legacy(
                     candidate_facts.append(r)
                     seen_fact_ids.add(r["id"])
         except Exception as e:
-            logger.debug(f"Fulltext search failed: {e}")  # Fulltext may fail if query has special chars
+            logger.debug(f"Fulltext search failed: {e}")  # May fail on special chars
 
     if not candidate_facts:
         return []

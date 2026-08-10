@@ -15,10 +15,46 @@ Usage:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+from pathlib import Path
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
+
+# Default location of the .env file shipped with the project.
+_ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
+
+
+def load_env() -> None:
+    """Populate os.environ from ~/ferrite/.env for any keys not already set.
+
+    This is a minimal .env loader: it only sets variables that are not already
+    present in the environment, so real environment variables always take
+    precedence over the values defined in the file.
+    """
+    if not _ENV_PATH.is_file():
+        return
+    for line in _ENV_PATH.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def _get_api_key() -> str | None:
+    """Return FERRITE_API_KEY from the environment, falling back to .env."""
+    key = os.environ.get("FERRITE_API_KEY")
+    if key:
+        return key
+    load_env()
+    return os.environ.get("FERRITE_API_KEY")
 
 
 def run(cmd: str, name: str) -> bool:
@@ -40,7 +76,15 @@ def recall_gate() -> bool:
     print("  Recall Gate (recall@5 >= 0.30)")
     print(f"{'='*50}")
     try:
-        resp = urlopen("http://localhost:8001/eval", timeout=60)
+        api_key = _get_api_key()
+        if not api_key:
+            print("❌ FAIL: FERRITE_API_KEY not set and not found in .env")
+            return False
+        req = Request(
+            "http://localhost:8001/eval",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        resp = urlopen(req, timeout=60)
         data = json.loads(resp.read())
         if "error" in data:
             print(f"❌ FAIL: Eval error: {data['error']}")
@@ -65,6 +109,7 @@ def recall_gate() -> bool:
 
 
 def main():
+    load_env()
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-load-test", action="store_true")
     args = parser.parse_args()

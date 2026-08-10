@@ -22,7 +22,7 @@ T = TypeVar("T")
 # data-level errors (ValueError, KeyError, etc.).
 # Includes neo4j.exceptions.ServiceUnavailable for stale connection recovery.
 try:
-    from neo4j.exceptions import ServiceUnavailable, TransientError, DatabaseError
+    from neo4j.exceptions import DatabaseError, ServiceUnavailable, TransientError
     _RETRYABLE_EXCEPTIONS = (
         ConnectionError,
         TimeoutError,

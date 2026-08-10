@@ -1,14 +1,23 @@
 """Tests for the LLM extraction module."""
 import json
+
 import pytest
-from ferrite.extractor import extract, parse_extraction_response, _extract_json_from_response
+
+from ferrite.extractor import extract, parse_extraction_response
 
 
 class TestParseExtractionResponse:
     def test_valid_json(self):
         response = json.dumps({
             "entities": [{"name": "Chris", "type": "person"}],
-            "facts": [{"subject": "Chris", "predicate": "works_at", "object": "Stoke", "object_type": "entity"}]
+            "facts": [
+                {
+                    "subject": "Chris",
+                    "predicate": "works_at",
+                    "object": "Stoke",
+                    "object_type": "entity",
+                }
+            ]
         })
         result = parse_extraction_response(response)
         assert len(result.entities) == 1

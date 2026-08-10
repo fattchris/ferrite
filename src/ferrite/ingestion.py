@@ -22,10 +22,11 @@ from datetime import datetime
 from typing import Callable, Optional
 
 import redis
-from .db import close_driver, get_driver
+
 from .canonicalize import resolve_entity
+from .db import close_driver, get_driver
 from .extractor import extract, normalize_literal
-from .models import Episode, ExtractedEntity, ExtractedFact, ExtractionResult, FactBase
+from .models import Episode, ExtractedFact, FactBase
 from .quality_gates import assertion_gate, should_consolidate_fact
 from .retry import retry
 from .temporal import (

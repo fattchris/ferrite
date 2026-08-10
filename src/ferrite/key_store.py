@@ -13,10 +13,10 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-
 from .config import get_settings
 from .models import KeyInfo
+
+logger = logging.getLogger(__name__)
 
 _DB_PATH = os.environ.get(
     "FERRITE_KEYS_DB",

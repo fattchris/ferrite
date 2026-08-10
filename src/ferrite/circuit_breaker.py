@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import time
 from enum import Enum
-from typing import Any, Callable, Optional, TypeVar
+from typing import Callable, Optional, TypeVar
 
 from .models import CircuitBreakerState
 

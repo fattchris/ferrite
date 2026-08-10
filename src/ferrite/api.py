@@ -14,7 +14,6 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .ingestion import IngestionPipeline
-from .query import count_entities
 from .key_store import (
     create_key as ks_create_key,
 )
@@ -44,6 +43,7 @@ from .models import (
     StoreRequest,
     StoreResponse,
 )
+from .query import count_entities
 from .rate_limit import check_rate_limit
 from .structured_logging import setup_logging
 from .temporal import get_history_as_of_knowledge, get_history_as_of_world
@@ -857,8 +857,8 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         Returns the raw text content that was ingested, so you can
         pull up the original arxiv paper, web page, etc. any time.
         """
-        from .file_repo import find_by_episode, get_content
         from .db import get_driver
+        from .file_repo import find_by_episode, get_content
         from .query import get_episode_source_file
 
         # First try the file repo index
