@@ -58,7 +58,8 @@ class HealthMonitor:
         if self.redis is None:
             return {"status": WARNING, "detail": "Redis client not configured"}
         try:
-            depth = self.redis.llen("ferrite:queue")
+            from .ingestion import QUEUE_KEY
+            depth = self.redis.llen(QUEUE_KEY)
             if depth < threshold:
                 return {"status": HEALTHY, "detail": f"Queue depth: {depth}"}
             return {"status": WARNING, "detail": f"Queue depth {depth} >= {threshold}"}
@@ -68,7 +69,7 @@ class HealthMonitor:
     def check_ingestion(self, max_age_minutes: int = 5) -> dict[str, Any]:
         """Check last ingestion time."""
         try:
-            datetime.now() - timedelta(minutes=max_age_minutes)
+            threshold = datetime.now() - timedelta(minutes=max_age_minutes)
             with self.driver.session() as s:
                 result = s.run(
                     "MATCH (ep:Episode) "
@@ -77,10 +78,16 @@ class HealthMonitor:
                 record = result.single()
                 if not record or record["total"] == 0:
                     return {"status": WARNING, "detail": "No episodes ingested yet"}
-                # This is informational, not a hard failure
+                last_ingest = record["last_ingest"]
+                # Compare last ingest against the staleness threshold
+                if last_ingest and str(last_ingest) < threshold.isoformat():
+                    return {
+                        "status": WARNING,
+                        "detail": f"Last ingest {last_ingest} older than {max_age_minutes}min",
+                    }
                 return {
                     "status": HEALTHY,
-                    "detail": f"Last ingest: {record['last_ingest']}, total: {record['total']}",
+                    "detail": f"Last ingest: {last_ingest}, total: {record['total']}",
                 }
         except Exception as e:
             return {"status": CRITICAL, "detail": f"Ingestion check failed: {e}"}

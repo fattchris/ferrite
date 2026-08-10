@@ -32,6 +32,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from neo4j import Driver
+
+from .retry import retry
+
 logger = logging.getLogger(__name__)
 
 GROUP_CAP = 20  # Maximum facts per consolidation group (A6)
@@ -83,7 +87,7 @@ def dequeue_consolidation(redis_client, group_key: str) -> None:
 
 
 def _get_group_facts(
-    driver,
+    driver: Driver,
     entity_name: str,
     predicate: str,
     namespace: str,
@@ -118,7 +122,7 @@ def _get_group_facts(
 
 
 def _get_existing_observation(
-    driver,
+    driver: Driver,
     entity_name: str,
     predicate: str,
     namespace: str,
@@ -147,8 +151,9 @@ def _get_existing_observation(
         return dict(record) if record else None
 
 
+@retry(max_attempts=3, backoff_base=0.5)
 def _create_observation(
-    driver,
+    driver: Driver,
     entity_name: str,
     predicate: str,
     namespace: str,
@@ -222,8 +227,9 @@ def _create_observation(
     return obs_id
 
 
+@retry(max_attempts=3, backoff_base=0.5)
 def _update_observation(
-    driver,
+    driver: Driver,
     obs_id: str,
     summary: str,
     new_facts: list[dict],
@@ -276,8 +282,9 @@ def _update_observation(
                 obs_id, len(new_facts), new_count)
 
 
+@retry(max_attempts=3, backoff_base=0.5)
 def _flag_contradiction(
-    driver,
+    driver: Driver,
     obs_id: str,
     new_facts: list[dict],
     summary: str,
@@ -310,8 +317,9 @@ def _flag_contradiction(
                    obs_id, len(new_facts))
 
 
+@retry(max_attempts=3, backoff_base=0.5)
 def _supersede_observation(
-    driver,
+    driver: Driver,
     old_obs_id: str,
     entity_name: str,
     predicate: str,
@@ -425,7 +433,7 @@ Synthesize these facts into a single observation summary."""
 
 
 def consolidate_group(
-    driver,
+    driver: Driver,
     entity_name: str,
     predicate: str,
     namespace: str,
@@ -507,7 +515,7 @@ def consolidate_group(
 
 
 def consolidate_pending(
-    driver,
+    driver: Driver,
     llm_client,
     redis_client=None,
     disposition: Optional[dict] = None,

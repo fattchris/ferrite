@@ -15,9 +15,12 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+from .config import get_settings
+from .models import KeyInfo
+
 _DB_PATH = os.environ.get(
     "FERRITE_KEYS_DB",
-    str(Path.home() / "ferrite" / "data" / "keys.db"),
+    get_settings().KEYS_DB_PATH,
 )
 
 
@@ -161,10 +164,10 @@ def list_keys(active_only: bool = True, db_path: Optional[str] = None) -> list[d
         conn.close()
 
 
-def validate_token(token: str, db_path: Optional[str] = None) -> dict | None:
+def validate_token(token: str, db_path: Optional[str] = None) -> Optional[KeyInfo]:
     """Validate a bearer token. Returns key info if valid, None if invalid.
 
-    Returns: {key_id, agent_name, scopes, namespaces} or None.
+    Returns: KeyInfo or None.
     """
     if not token:
         return None
@@ -172,12 +175,12 @@ def validate_token(token: str, db_path: Optional[str] = None) -> dict | None:
     # Check if it's the env-based admin key (backward compat)
     env_key = os.environ.get("FERRITE_API_KEY", "")
     if env_key and token == env_key:
-        return {
-            "key_id": "env-admin",
-            "agent_name": "admin",
-            "scopes": ["read", "write", "ingest", "admin"],
-            "namespaces": ["shared", "personal", "e2e-test"],
-        }
+        return KeyInfo(
+            key_id="env-admin",
+            agent_name="admin",
+            scopes=["read", "write", "ingest", "admin"],
+            namespaces=["shared", "personal", "e2e-test"],
+        )
 
     path = db_path or _get_db_path()
     if not os.path.exists(path):
@@ -198,25 +201,25 @@ def validate_token(token: str, db_path: Optional[str] = None) -> dict | None:
         row = cur.fetchone()
         if row is None:
             return None
-        return {
-            "key_id": row["key_id"],
-            "agent_name": row["agent_name"],
-            "scopes": json.loads(row["scopes"]),
-            "namespaces": json.loads(row["namespaces"]),
-        }
+        return KeyInfo(
+            key_id=row["key_id"],
+            agent_name=row["agent_name"],
+            scopes=json.loads(row["scopes"]),
+            namespaces=json.loads(row["namespaces"]),
+        )
     finally:
         conn.close()
 
 
-def has_scope(key_info: dict | None, scope: str) -> bool:
+def has_scope(key_info: Optional[KeyInfo], scope: str) -> bool:
     """Check if a validated key has a given scope."""
     if key_info is None:
         return False
-    return scope in key_info.get("scopes", [])
+    return scope in key_info.scopes
 
 
-def has_namespace_access(key_info: dict | None, namespace: str) -> bool:
+def has_namespace_access(key_info: Optional[KeyInfo], namespace: str) -> bool:
     """Check if a validated key can access a namespace."""
     if key_info is None:
         return False
-    return namespace in key_info.get("namespaces", [])
+    return namespace in key_info.namespaces

@@ -16,17 +16,18 @@ import json
 import logging
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from datetime import datetime
 from typing import Callable, Optional
 
 import redis
-from neo4j import GraphDatabase
-
+from .db import get_driver
 from .canonicalize import resolve_entity
 from .extractor import extract, normalize_literal
-from .models import Episode, FactBase
+from .models import Episode, ExtractedEntity, ExtractedFact, ExtractionResult, FactBase
 from .quality_gates import assertion_gate, should_consolidate_fact
+from .retry import retry
 from .temporal import (
     apply_contradiction,
     apply_supersession,
@@ -43,6 +44,19 @@ FAILED_QUEUE_KEY = "ferrite:failed_queue"
 DEAD_LETTER_KEY = "ferrite:dead_letter"
 MAX_RETRIES = 3
 CONSOLIDATION_QUEUE_KEY = "ferrite:consolidation:queue"
+
+
+class _NullCtx:
+    """Context manager that yields the given session without closing it."""
+
+    def __init__(self, session):
+        self._session = session
+
+    def __enter__(self):
+        return self._session
+
+    def __exit__(self, *args):
+        pass
 
 # LRU index for read-your-own-writes consistency (§6.4, A9)
 # {episode_id, raw_content, queued_at} — 1000 items, 5 min TTL
@@ -144,11 +158,11 @@ class IngestionPipeline:
         neo4j_uri: str,
         neo4j_user: str,
         neo4j_password: str,
-        embedding_func: Optional[Callable] = None,
-        llm_client: Optional[Callable] = None,
+        embedding_func: Optional[Callable[[str], Optional[list[float]]]] = None,
+        llm_client: Optional[Callable[[str, str], str]] = None,
     ):
         self.redis_client = redis.from_url(redis_url)
-        self.driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
+        self.driver = get_driver()
         self.embedding_func = embedding_func
         self.llm_client = llm_client
 
@@ -207,7 +221,9 @@ class IngestionPipeline:
                     if isinstance(episode_id, bytes)
                     else episode_id
                 )
-                self.process_episode(episode_id)
+                await asyncio.get_event_loop().run_in_executor(
+                    None, self.process_episode, episode_id
+                )
                 _lru_index.remove(episode_id)
             except asyncio.CancelledError:
                 logger.info("Ingestion consumer cancelled")
@@ -235,52 +251,47 @@ class IngestionPipeline:
 
         try:
             # Step 1: Extract entities and facts via LLM (with retry, F-7 fix)
-            extraction = None
-            for attempt in range(2):  # 1 retry with stricter prompt
-                try:
-                    extraction = extract(episode.content, self.llm_client)
-                    break
-                except (ValueError, KeyError) as extract_err:
-                    if attempt == 0 and self.llm_client is not None:
-                        logger.warning(
-                            f"Extraction attempt 1 failed ({extract_err}), "
-                            f"retrying with stricter prompt"
-                        )
-                        # Retry with a simpler content slice
-                        truncated = episode.content[:2000]
-                        extraction = extract(truncated, self.llm_client)
-                        break
-                    else:
-                        raise
+            try:
+                extraction = extract(episode.content, self.llm_client)
+            except (ValueError, KeyError) as extract_err:
+                if self.llm_client is not None:
+                    logger.warning(
+                        f"Extraction failed ({extract_err}), "
+                        f"retrying with truncated content"
+                    )
+                    truncated = episode.content[:2000]
+                    extraction = extract(truncated, self.llm_client)
+                else:
+                    raise
 
             if extraction is None:
                 raise RuntimeError("Extraction returned None after retries")
 
             # Step 2: Canonicalize entities
             entity_cache: dict[str, object] = {}
-            for ent_data in extraction.get("entities", []):
-                name = ent_data["name"]
+            for ent_data in extraction.entities:
+                name = ent_data.name
                 if name not in entity_cache:
                     entity = resolve_entity(
                         self.driver,
                         name,
                         self.embedding_func,
-                        entity_type=ent_data.get("type", "entity"),
-                        summary=ent_data.get("summary"),
+                        entity_type=ent_data.type,
+                        summary=ent_data.summary,
                     )
                     entity_cache[name] = entity
 
             # Also canonicalize subjects and objects referenced in facts
-            for fact_data in extraction.get("facts", []):
-                subj_name = fact_data["subject"]
+            for fact_data in extraction.facts:
+                subj_name = fact_data.subject
                 if subj_name not in entity_cache:
                     entity = resolve_entity(
                         self.driver, subj_name, self.embedding_func
                     )
                     entity_cache[subj_name] = entity
 
-                if fact_data.get("object_type") == "entity":
-                    obj_name = fact_data["object"]
+                if fact_data.object_type == "entity":
+                    obj_name = fact_data.object
                     if obj_name not in entity_cache:
                         entity = resolve_entity(
                             self.driver, obj_name, self.embedding_func
@@ -288,22 +299,25 @@ class IngestionPipeline:
                         entity_cache[obj_name] = entity
 
             # Step 3: Write facts to Neo4j with temporal logic
-            for fact_data in extraction.get("facts", []):
-                # Assertion gate (§7.2.1): skip facts with invalid assertion_source
-                if not assertion_gate(fact_data):
-                    logger.warning(f"Skipping fact that failed assertion gate: {fact_data}")
-                    continue
-                self._write_fact_with_temporal(episode, fact_data, entity_cache)
+            with self.driver.session() as session:
+                for fact_data in extraction.facts:
+                    # Assertion gate (§7.2.1): skip facts with invalid assertion_source
+                    if not assertion_gate(fact_data.model_dump()):
+                        logger.warning(f"Skipping fact that failed assertion gate: {fact_data}")
+                        continue
+                    self._write_fact_with_temporal(
+                        episode, fact_data, entity_cache, session
+                    )
 
             # Step 4: Enqueue consolidation groups for newly written facts (A16)
             try:
                 from .consolidator import _group_key, enqueue_consolidation
-                for fact_data in extraction.get("facts", []):
+                for fact_data in extraction.facts:
                     # model-sourced facts excluded from consolidation (§7.2.1)
-                    if not should_consolidate_fact(fact_data):
+                    if not should_consolidate_fact(fact_data.model_dump()):
                         continue
-                    subj_name = fact_data["subject"]
-                    predicate = fact_data.get("predicate", "other")
+                    subj_name = fact_data.subject
+                    predicate = fact_data.predicate
                     namespace = episode.namespace or "shared"
                     gk = _group_key(subj_name, predicate, namespace)
                     enqueue_consolidation(self.redis_client, gk)
@@ -314,7 +328,6 @@ class IngestionPipeline:
 
         except Exception as e:
             # DLQ logic (F-5 fix): retry with backoff, then dead letter
-            import json
             retry_count = self.redis_client.hget(
                 f"{EPISODE_KEY_PREFIX}{episode_id}", "retries"
             )
@@ -349,26 +362,27 @@ class IngestionPipeline:
     def _write_fact_with_temporal(
         self,
         episode: Episode,
-        fact_data: dict,
+        fact_data: ExtractedFact,
         entity_cache: dict,
+        session = None,
     ) -> None:
         """Write a single fact to Neo4j, applying temporal logic."""
-        predicate = fact_data["predicate"]
+        predicate = fact_data.predicate
         if not is_valid_predicate(predicate):
             logger.warning(f"Skipping fact with invalid predicate: {predicate}")
             return
 
-        subject_entity = entity_cache.get(fact_data["subject"])
+        subject_entity = entity_cache.get(fact_data.subject)
         if subject_entity is None:
             logger.warning(
-                f"Subject entity not found for: {fact_data['subject']}"
+                f"Subject entity not found for: {fact_data.subject}"
             )
             return
 
         # Determine valid_at
-        if fact_data.get("valid_at"):
+        if fact_data.valid_at:
             try:
-                valid_at = datetime.fromisoformat(fact_data["valid_at"])
+                valid_at = datetime.fromisoformat(fact_data.valid_at)
                 valid_at_inferred = False
             except (ValueError, TypeError):
                 valid_at = episode.recorded_at
@@ -378,21 +392,21 @@ class IngestionPipeline:
             valid_at_inferred = True
 
         # Determine object
-        object_type = fact_data.get("object_type", "entity")
-        object_value = fact_data["object"]
+        object_type = fact_data.object_type
+        object_value = fact_data.object
         if object_type == "literal":
             object_value = normalize_literal(object_value)
 
         # Build the canonical statement
-        statement = f"{fact_data['subject']} {predicate} {object_value}"
+        statement = f"{fact_data.subject} {predicate} {object_value}"
 
         # Create the Fact object
         fact = FactBase(
             predicate=predicate,
             statement=statement,
             functional=is_functional(predicate),
-            certainty=fact_data.get("certainty", "stated"),
-            assertion_source=fact_data.get("assertion_source", "model"),
+            certainty=fact_data.certainty,
+            assertion_source=fact_data.assertion_source,
             valid_at=valid_at,
             valid_at_inferred=valid_at_inferred,
             namespace=episode.namespace,
@@ -412,7 +426,7 @@ class IngestionPipeline:
             if old_fact:
                 # Write new fact first, then supersede old
                 self._write_fact(
-                    fact, subject_entity, object_value, object_type, episode
+                    fact, subject_entity, object_value, object_type, episode, session
                 )
                 apply_supersession(
                     self.driver, old_fact["id"], fact.id, valid_at
@@ -420,7 +434,7 @@ class IngestionPipeline:
                 return
 
         # Check for contradiction (negation flag)
-        if fact_data.get("negation", False):
+        if fact_data.negation:
             existing_fact_id = detect_contradiction(
                 self.driver,
                 subject_entity.id,
@@ -431,14 +445,15 @@ class IngestionPipeline:
             )
             if existing_fact_id:
                 self._write_fact(
-                    fact, subject_entity, object_value, object_type, episode
+                    fact, subject_entity, object_value, object_type, episode, session
                 )
                 apply_contradiction(self.driver, existing_fact_id, fact.id)
                 return
 
         # Normal write
-        self._write_fact(fact, subject_entity, object_value, object_type, episode)
+        self._write_fact(fact, subject_entity, object_value, object_type, episode, session)
 
+    @retry(max_attempts=3, backoff_base=0.5)
     def _write_fact(
         self,
         fact: FactBase,
@@ -446,9 +461,15 @@ class IngestionPipeline:
         object_value: str,
         object_type: str,
         episode: Episode,
+        session = None,
     ) -> None:
         """Write a Fact node to Neo4j with SUBJECT, OBJECT, SOURCED_FROM edges."""
-        with self.driver.session() as session:
+        if session is None:
+            session_ctx = self.driver.session()
+        else:
+            session_ctx = _NullCtx(session)
+
+        with session_ctx as session:
             # Create Episode node if not exists
             session.run(
                 """
@@ -562,7 +583,6 @@ class IngestionPipeline:
             )
 
             # Create observation and link
-            import uuid
             obs_id = str(uuid.uuid4())
             session.run(
                 """

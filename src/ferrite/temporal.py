@@ -4,11 +4,15 @@ import logging
 from datetime import datetime
 from typing import Optional
 
+from neo4j import Driver
+
+from .retry import retry
+
 logger = logging.getLogger(__name__)
 
 
 def detect_supersession(
-    driver,
+    driver: Driver,
     subject_id: str,
     predicate: str,
     new_object: str,
@@ -27,12 +31,14 @@ def detect_supersession(
         result = session.run(
             """
             MATCH (e:Entity {id: $subject_id})<-[:SUBJECT]-(f:Fact)
+            OPTIONAL MATCH (f)-[:OBJECT]->(target)
             WHERE f.predicate = $predicate
               AND f.epistemic_state = 'active'
               AND f.invalid_at IS NULL
               AND f.namespace = $namespace
             RETURN f.id AS id, f.statement AS statement, f.valid_at AS valid_at,
-                   f.namespace AS namespace
+                   f.namespace AS namespace,
+                   COALESCE(target.name, target.value) AS obj_value
             """,
             subject_id=subject_id,
             predicate=predicate,
@@ -45,18 +51,7 @@ def detect_supersession(
 
     # For functional predicates, check if any existing fact has a different object
     for record in records:
-        # We need to check the object. Fetch it.
-        with driver.session() as session:
-            obj_result = session.run(
-                """
-                MATCH (f:Fact {id: $fact_id})-[:OBJECT]->(target)
-                RETURN COALESCE(target.name, target.value) AS obj_value
-                """,
-                fact_id=record["id"],
-            )
-            obj_record = obj_result.single()
-
-        existing_object = obj_record["obj_value"] if obj_record else None
+        existing_object = record["obj_value"]
 
         if existing_object != new_object:
             logger.info(
@@ -73,8 +68,9 @@ def detect_supersession(
     return None
 
 
+@retry(max_attempts=3, backoff_base=0.5)
 def apply_supersession(
-    driver,
+    driver: Driver,
     old_fact_id: str,
     new_fact_id: str,
     new_valid_at: datetime,
@@ -108,7 +104,7 @@ def apply_supersession(
 
 
 def detect_contradiction(
-    driver,
+    driver: Driver,
     subject_id: str,
     predicate: str,
     new_object: str,
@@ -126,27 +122,20 @@ def detect_contradiction(
         result = session.run(
             """
             MATCH (e:Entity {id: $subject_id})<-[:SUBJECT]-(f:Fact)
+            OPTIONAL MATCH (f)-[:OBJECT]->(target)
             WHERE f.predicate = $predicate
               AND f.epistemic_state = 'active'
               AND f.invalid_at IS NULL
               AND f.namespace = $namespace
-            RETURN f.id AS id
+            RETURN f.id AS id,
+                   COALESCE(target.name, target.value) AS obj_value
             """,
             subject_id=subject_id,
             predicate=predicate,
             namespace=namespace,
         )
         for record in result:
-            # Check if the object matches
-            obj_result = session.run(
-                """
-                MATCH (f:Fact {id: $fact_id})-[:OBJECT]->(target)
-                RETURN COALESCE(target.name, target.value) AS obj_value
-                """,
-                fact_id=record["id"],
-            )
-            obj_record = obj_result.single()
-            existing_object = obj_record["obj_value"] if obj_record else None
+            existing_object = record["obj_value"]
 
             if existing_object == new_object:
                 # Contradiction: same subject+predicate+object with negation
@@ -159,8 +148,9 @@ def detect_contradiction(
     return None
 
 
+@retry(max_attempts=3, backoff_base=0.5)
 def apply_contradiction(
-    driver,
+    driver: Driver,
     existing_fact_id: str,
     new_fact_id: str,
 ) -> None:
@@ -182,7 +172,7 @@ def apply_contradiction(
 
 
 def get_history_as_of_knowledge(
-    driver,
+    driver: Driver,
     entity_id: str,
     at_time: datetime,
     namespace: Optional[str] = None,
@@ -213,7 +203,7 @@ def get_history_as_of_knowledge(
 
 
 def get_history_as_of_world(
-    driver,
+    driver: Driver,
     entity_id: str,
     at_time: datetime,
     namespace: Optional[str] = None,

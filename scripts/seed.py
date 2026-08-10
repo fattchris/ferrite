@@ -9,6 +9,7 @@ Cleans all existing data, initializes the schema, and seeds with real data.
 """
 
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -28,10 +29,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-NEO4J_URI = "bolt://localhost:7687"
-NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "ferrite123"
-REDIS_URL = "redis://localhost:6379"
+NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
+_env_pw = os.environ.get("NEO4J_PASSWORD", os.environ.get("FERRITE_NEO4J_PASSWORD", ""))
+if not _env_pw:
+    from ferrite.config import get_settings
+    NEO4J_PASSWORD = get_settings().NEO4J_PASSWORD
+else:
+    NEO4J_PASSWORD = _env_pw
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 
 # Timestamps
 T1 = datetime(2026, 7, 1)    # Most facts

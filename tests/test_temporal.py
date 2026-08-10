@@ -44,7 +44,7 @@ class TestDetectSupersession:
     def test_existing_fact_different_object_triggers_supersession(self, mock_driver):
         driver, session = mock_driver
 
-        # First query: find existing active fact
+        # Single query returns fact + object value (N+1 fix)
         fact_result = MagicMock()
         fact_result.__iter__ = MagicMock(
             return_value=iter([{
@@ -52,14 +52,11 @@ class TestDetectSupersession:
                 "statement": "alice works_at oldcorp",
                 "valid_at": datetime(2024, 1, 1),
                 "namespace": "shared",
+                "obj_value": "oldcorp",
             }])
         )
 
-        # Second query: get the object of that fact
-        obj_result = MagicMock()
-        obj_result.single.return_value = {"obj_value": "oldcorp"}
-
-        session.run.side_effect = [fact_result, obj_result]
+        session.run.return_value = fact_result
 
         result = detect_supersession(
             driver, "entity-1", "works_at", "newcorp", "entity", "shared"
@@ -78,13 +75,11 @@ class TestDetectSupersession:
                 "statement": "alice works_at acme",
                 "valid_at": datetime(2024, 1, 1),
                 "namespace": "shared",
+                "obj_value": "acme",
             }])
         )
 
-        obj_result = MagicMock()
-        obj_result.single.return_value = {"obj_value": "acme"}
-
-        session.run.side_effect = [fact_result, obj_result]
+        session.run.return_value = fact_result
 
         result = detect_supersession(
             driver, "entity-1", "works_at", "acme", "entity", "shared"
@@ -136,15 +131,16 @@ class TestDetectContradiction:
     def test_same_object_with_negation_triggers_contradiction(self, mock_driver):
         driver, session = mock_driver
 
+        # Single query returns fact + object value (N+1 fix)
         fact_result = MagicMock()
         fact_result.__iter__ = MagicMock(
-            return_value=iter([{"id": "existing-fact-id"}])
+            return_value=iter([{
+                "id": "existing-fact-id",
+                "obj_value": "acme",
+            }])
         )
 
-        obj_result = MagicMock()
-        obj_result.single.return_value = {"obj_value": "acme"}
-
-        session.run.side_effect = [fact_result, obj_result]
+        session.run.return_value = fact_result
 
         result = detect_contradiction(
             driver, "entity-1", "works_at", "acme", True, "shared"
@@ -157,13 +153,13 @@ class TestDetectContradiction:
 
         fact_result = MagicMock()
         fact_result.__iter__ = MagicMock(
-            return_value=iter([{"id": "existing-fact-id"}])
+            return_value=iter([{
+                "id": "existing-fact-id",
+                "obj_value": "oldcorp",
+            }])
         )
 
-        obj_result = MagicMock()
-        obj_result.single.return_value = {"obj_value": "oldcorp"}
-
-        session.run.side_effect = [fact_result, obj_result]
+        session.run.return_value = fact_result
 
         result = detect_contradiction(
             driver, "entity-1", "works_at", "acme", True, "shared"

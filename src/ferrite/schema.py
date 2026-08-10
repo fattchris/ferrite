@@ -44,6 +44,14 @@ SCHEMA_DDL: list[str] = [
     "`vector.dimensions`: 768, "
     "`vector.similarity_function`: 'cosine'"
     "}}",
+
+    # Vector index for entity canonicalization (§7.2.2)
+    "CREATE VECTOR INDEX entity_embeddings IF NOT EXISTS "
+    "FOR (e:Entity) ON (e.embedding) "
+    "OPTIONS {indexConfig: {"
+    "`vector.dimensions`: 768, "
+    "`vector.similarity_function`: 'cosine'"
+    "}}",
 ]
 
 

@@ -35,10 +35,17 @@ def check_rate_limit(
     limit = write_limit if is_write else read_limit
     bucket = f"rl:{key_id}:{'w' if is_write else 'r'}:{int(time.time() // window)}"
 
+    # Lua script: atomic INCR + EXPIRE (Issue 14)
+    _INCR_EXPIRE_LUA = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+"""
+
     try:
-        count = redis_client.incr(bucket)
-        if count == 1:
-            redis_client.expire(bucket, window)
+        count = redis_client.eval(_INCR_EXPIRE_LUA, 1, bucket, window)
 
         if count > limit:
             retry_after = window - int(time.time() % window)

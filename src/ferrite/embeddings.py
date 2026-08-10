@@ -14,6 +14,8 @@ import logging
 import urllib.request
 from typing import Optional
 
+from .retry import retry
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "nomic-embed-text"
@@ -26,15 +28,24 @@ class OllamaEmbedder:
 
     def __init__(
         self,
-        model_name: str = DEFAULT_MODEL,
-        host: str = DEFAULT_HOST,
+        model_name: Optional[str] = None,
+        host: Optional[str] = None,
         timeout: int = 30,
     ) -> None:
+        if model_name is None or host is None:
+            from .config import get_settings
+            _settings = get_settings()
+            if model_name is None:
+                model_name = _settings.EMBED_MODEL
+            if host is None:
+                # OllamaEmbedder expects the Ollama base URL (without /v1 suffix)
+                host = _settings.EMBED_BASE_URL.rstrip("/v1").rstrip("/")
         self.model_name = model_name
         self.host = host.rstrip("/")
         self.timeout = timeout
         self._available: Optional[bool] = None
 
+    @retry(max_attempts=3, backoff_base=0.5)
     def embed(self, text: str) -> Optional[list[float]]:
         """Embed a single text. Returns None if Ollama is unreachable."""
         if not text or not text.strip():
@@ -76,6 +87,8 @@ class OllamaEmbedder:
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
     dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = sum(x * x for x in a) ** 0.5
     norm_b = sum(y * y for y in b) ** 0.5

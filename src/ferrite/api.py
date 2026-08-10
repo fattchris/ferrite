@@ -1,5 +1,7 @@
 """FastAPI application with Ferrite KG endpoints."""
 
+import asyncio
+import json
 import logging
 import os
 import time
@@ -12,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .ingestion import IngestionPipeline
+from .query import count_entities
 from .key_store import (
     create_key as ks_create_key,
 )
@@ -35,6 +38,7 @@ from .key_store import (
 )
 from .models import (
     HealthResponse,
+    KeyInfo,
     SearchResponse,
     SearchResult,
     StoreRequest,
@@ -74,45 +78,12 @@ def _extract_token(request: Request) -> str:
     return ""
 
 
-def _validate_request_token(request: Request) -> dict | None:
+def _validate_request_token(request: Request) -> Optional[KeyInfo]:
     """Validate the token from the request, returns key_info or None."""
     token = _extract_token(request)
     if not token:
         return None
     return ks_validate_token(token)
-
-# Rate limiting storage (in-memory for MVP; Redis in production)
-_rate_limit_store: dict[str, dict] = {}
-
-
-def _check_rate_limit(api_key: str, is_write: bool) -> bool:
-    """Token bucket rate limiter. Returns True if request is allowed."""
-    if not api_key:
-        api_key = "anonymous"
-
-    # Admin keys are exempt
-    admin_keys = {"admin", "ferrite-admin"}
-    if api_key in admin_keys:
-        return True
-
-    now = time.time()
-    limit = settings.WRITE_RATE_LIMIT if is_write else settings.READ_RATE_LIMIT
-    window = 60.0  # 1 minute
-
-    if api_key not in _rate_limit_store:
-        _rate_limit_store[api_key] = {"read": [], "write": []}
-
-    bucket_key = "write" if is_write else "read"
-    bucket = _rate_limit_store[api_key][bucket_key]
-
-    # Remove timestamps outside the window
-    bucket[:] = [t for t in bucket if now - t < window]
-
-    if len(bucket) >= limit:
-        return False
-
-    bucket.append(now)
-    return True
 
 
 def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
@@ -134,11 +105,10 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 if not llm_key:
                     return None
 
-                import json as _json
                 import urllib.request as _urllib
 
                 def _llm_client(system_prompt: str, user_prompt: str) -> str:
-                    data = _json.dumps({
+                    data = json.dumps({
                         "model": llm_model,
                         "messages": [
                             {"role": "system", "content": system_prompt},
@@ -154,8 +124,8 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                             "Authorization": f"Bearer {llm_key}",
                         },
                     )
-                    with _urllib.urlopen(req, timeout=120) as r:
-                        return _json.loads(r.read())["choices"][0]["message"]["content"]
+                    with _urllib.urlopen(req, timeout=settings.LLM_TIMEOUT) as r:
+                        return json.loads(r.read())["choices"][0]["message"]["content"]
 
                 return _llm_client
 
@@ -177,14 +147,10 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
     @app.on_event("startup")
     async def init_neo4j_schema():
         try:
+            from .db import get_driver
             from .schema import init_schema
-            from neo4j import GraphDatabase
-            schema_driver = GraphDatabase.driver(
-                settings.NEO4J_URI,
-                auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
-            )
+            schema_driver = get_driver()
             init_schema(schema_driver)
-            schema_driver.close()
             logger.info("Neo4j schema initialized")
         except Exception as e:
             logger.warning(f"Could not initialize Neo4j schema: {e}")
@@ -193,8 +159,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
     @app.on_event("startup")
     async def start_ingestion_consumer():
         if pipeline is not None:
-            import asyncio as _asyncio
-            app.state.consumer_task = _asyncio.create_task(
+            app.state.consumer_task = asyncio.create_task(
                 pipeline.start_consumer(poll_interval=1.0)
             )
             logger.info("In-proc ingestion consumer started")
@@ -206,8 +171,8 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             task.cancel()
             try:
                 await task
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Consumer task cancellation error: {e}")
 
     @app.middleware("http")
     async def auth_and_rate_limit_middleware(request: Request, call_next):
@@ -222,16 +187,16 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             if not env_key and not os.path.exists(
                 os.environ.get(
                     "FERRITE_KEYS_DB",
-                    os.path.join(os.path.dirname(__file__), "..", "..", "data", "keys.db"),
+                    settings.KEYS_DB_PATH,
                 )
             ):
                 # Dev mode: no keys configured, auth disabled
-                key_info = {
-                    "key_id": "dev",
-                    "agent_name": "dev",
-                    "scopes": ["read", "write", "admin"],
-                    "namespaces": ["shared", "personal", "e2e-test"],
-                }
+                key_info = KeyInfo(
+                    key_id="dev",
+                    agent_name="dev",
+                    scopes=["read", "write", "admin"],
+                    namespaces=["shared", "personal", "e2e-test"],
+                )
 
             if key_info is None:
                 return JSONResponse(
@@ -258,8 +223,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 # Also check body namespace for POST /store (F-1 fix)
                 if request.headers.get("content-type", "").startswith("application/json"):
                     try:
-                        import json as _json
-                        body = _json.loads(request._body) if hasattr(request, "_body") else None
+                        body = json.loads(request._body) if hasattr(request, "_body") else None
                         if body and "namespace" in body:
                             body_ns = body["namespace"]
                             if body_ns != ns_param and not ks_has_namespace(key_info, body_ns):
@@ -274,8 +238,8 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                                 )
                             # Override query param with body namespace
                             ns_param = body_ns
-                    except Exception:
-                        pass  # Body parse failure handled by endpoint validation
+                    except Exception as e:
+                        logger.debug(f"Body namespace parse failed: {e}")
 
             # Store key_info in request state for downstream handlers
             request.state.key_info = key_info
@@ -285,7 +249,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 is_write = request.method in ("POST", "PUT", "PATCH", "DELETE")
                 allowed, retry_after = check_rate_limit(
                     pipeline.redis_client,
-                    key_info.get("key_id", "anonymous"),
+                    key_info.key_id,
                     is_write=is_write,
                 )
                 if not allowed:
@@ -403,7 +367,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         key_info = getattr(request.state, "key_info", None)
         ns_params: dict = {}
         if key_info:
-            allowed_ns = key_info.get("namespaces", ["shared"])
+            allowed_ns = key_info.namespaces
             if namespace:
                 if not ks_has_namespace(key_info, namespace):
                     raise HTTPException(
@@ -514,8 +478,9 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 }
                 for r in result
             ]
-            # Get total count
-            total = session.run("MATCH (e:Entity) RETURN count(e) AS c").single()["c"]
+            # Get total count — routed through the query builder (§6.3:
+            # no raw MATCH Cypher in handler modules).
+            total = count_entities(pipeline.driver)
         return {"entities": entities, "total": total}
 
     @app.get("/entities/{entity_id}")
@@ -631,14 +596,16 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         try:
             with pipeline.driver.session() as session:
                 session.run("RETURN 1").consume()
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Neo4j health check failed: {e}")
             neo4j_status = "error"
 
         # Check Redis
         try:
             pipeline.redis_client.ping()
             queue_depth = pipeline.get_queue_depth()
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Redis health check failed: {e}")
             redis_status = "error"
 
         return HealthResponse(
@@ -755,8 +722,8 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 lines.append("# HELP ferrite_queue_depth Ingestion queue depth")
                 lines.append("# TYPE ferrite_queue_depth gauge")
                 lines.append(f"ferrite_queue_depth {queue_depth}")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Queue depth metric collection failed: {e}")
 
         return PlainTextResponse(
             "\n".join(lines),
@@ -778,8 +745,12 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             return {"error": "Pipeline not available"}
 
         try:
-            embedder = OllamaEmbedder()
-        except Exception:
+            embedder = OllamaEmbedder(
+                model_name=settings.EMBED_MODEL,
+                host=settings.EMBED_BASE_URL,
+            )
+        except Exception as e:
+            logger.debug(f"Ollama embedder init failed for TEMPR: {e}")
             embedder = None
 
         results = tempr_search(
@@ -827,8 +798,12 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             return {"error": "Pipeline not available"}
 
         try:
-            embedder = OllamaEmbedder()
-        except Exception:
+            embedder = OllamaEmbedder(
+                model_name=settings.EMBED_MODEL,
+                host=settings.EMBED_BASE_URL,
+            )
+        except Exception as e:
+            logger.debug(f"Ollama embedder init failed for eval: {e}")
             embedder = None
 
         return run_eval(pipeline.driver, embedder=embedder)
@@ -904,8 +879,8 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                         results["api"] = True
                         results["neo4j"] = data.get("neo4j") == "ok"
                         results["redis_aof"] = data.get("redis") == "ok"
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Install verify health check failed: {e}")
 
             # Auth
             try:
@@ -916,8 +891,8 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                         timeout=5.0,
                     )
                     results["auth"] = resp.status_code == 200
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Install verify auth check failed: {e}")
 
             all_ok = all(results.values())
             return {"status": "ok" if all_ok else "issues", "checks": results}

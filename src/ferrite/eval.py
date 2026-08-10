@@ -19,6 +19,8 @@ from typing import Optional
 
 import yaml
 
+from .models import Embedder
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_QUERIES_FILE = Path(__file__).parent.parent.parent / "eval" / "queries.yaml"
@@ -73,7 +75,7 @@ def _compute_substring_match(results: list[dict], expected_substrings: list[str]
 
 def run_eval(
     driver,
-    embedder=None,
+    embedder: Optional[Embedder] = None,
     queries_file: Optional[Path] = None,
     k_values: list[int] | None = None,
 ) -> dict:

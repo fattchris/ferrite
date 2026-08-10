@@ -21,7 +21,9 @@ from __future__ import annotations
 import logging
 import time
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TypeVar
+
+from .models import CircuitBreakerState
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,9 @@ class CircuitState(str, Enum):
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"
+
+
+T = TypeVar("T")
 
 
 class CircuitBreaker:
@@ -78,11 +83,11 @@ class CircuitBreaker:
 
     def call(
         self,
-        func: Callable[..., Any],
+        func: Callable[..., T],
         *args,
-        fallback: Any = None,
+        fallback: Optional[T] = None,
         **kwargs,
-    ) -> Any:
+    ) -> Optional[T]:
         """Execute a function through the circuit breaker.
 
         If circuit is open, returns fallback immediately.
@@ -145,17 +150,17 @@ class CircuitBreaker:
         self._last_failure_time = None
         logger.info("Circuit breaker: reset to CLOSED")
 
-    def get_state(self) -> dict:
+    def get_state(self) -> CircuitBreakerState:
         """Get current state for monitoring."""
-        return {
-            "state": self.state.value,
-            "failure_count": self._failure_count,
-            "success_count": self._success_count,
-            "failure_threshold": self.failure_threshold,
-            "cooldown_seconds": self.cooldown_seconds,
-            "half_open_calls": self._half_open_calls,
-            "last_failure_time": self._last_failure_time,
-        }
+        return CircuitBreakerState(
+            state=self.state.value,
+            failure_count=self._failure_count,
+            success_count=self._success_count,
+            failure_threshold=self.failure_threshold,
+            cooldown_seconds=self.cooldown_seconds,
+            half_open_calls=self._half_open_calls,
+            last_failure_time=self._last_failure_time,
+        )
 
 
 # Singleton instance for the Ferrite service

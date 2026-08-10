@@ -38,7 +38,8 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = _yaml_config.get("llm", {}).get(
         "api_base", "http://localhost:4000/v1"
     )
-    LLM_MODEL: str = _yaml_config.get("llm", {}).get("model", "gpt-4o-mini")
+    LLM_MODEL: str = _yaml_config.get("llm", {}).get("model", "glm-5.2")
+    LLM_TIMEOUT: int = int(_yaml_config.get("llm", {}).get("timeout", 120))
 
     # Embeddings (§15.2 embedder — §11.2)
     EMBED_BASE_URL: str = _yaml_config.get("embedder", {}).get(
@@ -51,7 +52,7 @@ class Settings(BaseSettings):
 
     # Server (§15.2 server)
     SERVER_TRANSPORT: str = _yaml_config.get("server", {}).get("transport", "http")
-    SERVER_PORT: int = _yaml_config.get("server", {}).get("port", 8000)
+    SERVER_PORT: int = _yaml_config.get("server", {}).get("port", 8001)
 
     # Circuit breaker (§15.2 circuit_breaker)
     CB_FAILURE_THRESHOLD: int = _yaml_config.get("circuit_breaker", {}).get(
@@ -81,6 +82,9 @@ class Settings(BaseSettings):
 
     # Namespace
     NAMESPACE_DEFAULT: str = "shared"
+
+    # Key store
+    KEYS_DB_PATH: str = str(Path.home() / "ferrite" / "data" / "keys.db")
 
     # Logging (§8 — structured JSON to stderr for Docker capture)
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")

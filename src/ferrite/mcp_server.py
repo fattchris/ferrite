@@ -54,6 +54,7 @@ except ImportError:
     _HTTP_AVAILABLE = False
 
 from .circuit_breaker import get_circuit_breaker
+from .db import get_driver
 from .embeddings import OllamaEmbedder
 from .query import (
     get_entity_facts,
@@ -67,36 +68,40 @@ logger = logging.getLogger(__name__)
 
 # --- Config from env ---
 
+from .config import get_settings as _get_settings
+
 NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "ferrite123")
+NEO4J_PASSWORD = _get_settings().NEO4J_PASSWORD
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "")
-LITELLM_BASE_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
-LLM_MODEL = os.environ.get("LLM_MODEL", "glm-5.2")
 
-# --- Neo4j driver (lazy init) ---
+from .config import get_settings as _get_settings
 
-_driver = None
+_settings = _get_settings()
+LITELLM_BASE_URL = _settings.LLM_BASE_URL
+LLM_MODEL = _settings.LLM_MODEL
+
+# --- Neo4j driver (singleton via db.get_driver) ---
+
 _embedder = None
+_pipeline = None
 
 
 def _get_driver():
-    global _driver
-    if _driver is None:
-        from neo4j import GraphDatabase
-
-        _driver = GraphDatabase.driver(
-            NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD)
-        )
-    return _driver
+    """Compatibility wrapper — delegates to db.get_driver() singleton."""
+    return get_driver()
 
 
 def _get_embedder():
     """Lazy init Ollama embedder for semantic search."""
     global _embedder
     if _embedder is None:
-        _embedder = OllamaEmbedder()
+        _s = _get_settings()
+        _embedder = OllamaEmbedder(
+            model_name=_s.EMBED_MODEL,
+            host=_s.EMBED_BASE_URL,
+        )
     return _embedder
 
 
@@ -118,7 +123,7 @@ def _llm_client(system_prompt: str, user_prompt: str) -> str:
             "Authorization": f"Bearer {LITELLM_API_KEY}",
         },
     )
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with urllib.request.urlopen(req, timeout=_get_settings().LLM_TIMEOUT) as r:
         return json.loads(r.read())["choices"][0]["message"]["content"]
 
 
@@ -422,7 +427,8 @@ def _handle_search(args: dict) -> list[types.TextContent]:
     limit = args.get("limit", 10)
     try:
         embedder = _get_embedder()
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Embedder init failed for search: {e}")
         embedder = None
     results = search_facts(
         _get_driver(), query, limit=limit, embedder=embedder
@@ -453,7 +459,8 @@ def _handle_inject(args: dict) -> list[types.TextContent]:
     text = args["text"]
     try:
         embedder = _get_embedder()
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Embedder init failed for inject: {e}")
         embedder = None
     results = inject_context(
         _get_driver(), text, _llm_client, embedder=embedder
@@ -480,7 +487,8 @@ def _handle_tempr_search(args: dict) -> list[types.TextContent]:
     include_history = args.get("include_history", False)
     try:
         embedder = _get_embedder()
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Embedder init failed for TEMPR search: {e}")
         embedder = None
     results = tempr_search(
         _get_driver(), query, embedder=embedder,
@@ -533,7 +541,8 @@ def _handle_consolidate(args: dict) -> list[types.TextContent]:
     try:
         import redis as _redis
         r = _redis.from_url(REDIS_URL)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Redis init failed for consolidation: {e}")
         r = None
 
     count = consolidate_pending(_get_driver(), _llm_client, redis_client=r)
@@ -575,7 +584,8 @@ def _handle_get_provenance(args: dict) -> list[types.TextContent]:
     source_raw = episode["source"] or "{}"
     try:
         source = _json.loads(source_raw) if isinstance(source_raw, str) else source_raw
-    except Exception:
+    except (ValueError, TypeError) as e:
+        logger.debug(f"Source JSON parse failed: {e}")
         source = {"raw": source_raw}
 
     # Build the provenance chain
@@ -731,21 +741,35 @@ def _get_stats() -> dict:
     }
 
 
+def _get_pipeline():
+    """Module-level singleton IngestionPipeline for MCP ingest.
+
+    Lazily creates one IngestionPipeline (connected to Redis + Neo4j via
+    get_driver()) and reuses it for all ferrite_ingest calls instead of
+    constructing a new pipeline per call.
+    """
+    global _pipeline
+    if _pipeline is None:
+        from .ingestion import IngestionPipeline
+
+        _pipeline = IngestionPipeline(
+            redis_url=REDIS_URL,
+            neo4j_uri=NEO4J_URI,
+            neo4j_user=NEO4J_USER,
+            neo4j_password=NEO4J_PASSWORD,
+            llm_client=_llm_client,
+        )
+    return _pipeline
+
+
 def _ingest(content: str, source: str) -> dict:
     """Ingest text content into the graph."""
     import uuid as _uuid
     from datetime import datetime
 
-    from .ingestion import IngestionPipeline
     from .models import Episode
 
-    pipe = IngestionPipeline(
-        redis_url=REDIS_URL,
-        neo4j_uri=NEO4J_URI,
-        neo4j_user=NEO4J_USER,
-        neo4j_password=NEO4J_PASSWORD,
-        llm_client=_llm_client,
-    )
+    pipe = _get_pipeline()
 
     ep = Episode(
         id=str(_uuid.uuid4()),
@@ -767,8 +791,6 @@ def _ingest(content: str, source: str) -> dict:
         )
         record = result.single()
         fact_count = record["c"] if record else 0
-
-    pipe.close()
 
     return {
         "episode_id": ep.id,

@@ -180,7 +180,8 @@ def search_mental_models(
                 **params,
             )
             return [dict(r) for r in result]
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Mental model fulltext search failed, using fallback: {e}")
             # Fallback: no fulltext index on mental_model yet
             result = s.run(
                 f"""
@@ -248,8 +249,6 @@ def flag_stale_mental_models(driver) -> int:
 
     Returns count of models flagged stale.
     """
-    datetime.now(timezone.utc).isoformat()
-
     with driver.session() as s:
         # Find mental models whose curated entities have facts
         # updated after the model's last update

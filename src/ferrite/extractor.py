@@ -5,6 +5,7 @@ import logging
 import re
 from typing import Callable, Optional
 
+from .models import ExtractedEntity, ExtractedFact, ExtractionResult
 from .vocab import PREDICATE_VOCAB, is_valid_predicate
 
 logger = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ def _extract_json_from_response(text: str) -> dict:
     raise ValueError(f"Could not extract JSON from response: {text[:200]}")
 
 
-def parse_extraction_response(response: str) -> dict:
+def parse_extraction_response(response: str) -> ExtractionResult:
     """Parse and validate the LLM extraction response.
 
     Validates:
@@ -106,7 +107,7 @@ def parse_extraction_response(response: str) -> dict:
     - Each fact's predicate is in controlled vocabulary
     - Required fields are present
 
-    Returns validated extraction dict.
+    Returns validated ExtractionResult.
     """
     data = _extract_json_from_response(response)
 
@@ -174,10 +175,13 @@ def parse_extraction_response(response: str) -> dict:
 
         validated_facts.append(fact)
 
-    return {"entities": validated_entities, "facts": validated_facts}
+    return ExtractionResult(
+        entities=[ExtractedEntity(**ent) for ent in validated_entities],
+        facts=[ExtractedFact(**fact) for fact in validated_facts],
+    )
 
 
-def extract(content: str, llm_client: Optional[Callable] = None) -> dict:
+def extract(content: str, llm_client: Optional[Callable[[str, str], str]] = None) -> ExtractionResult:
     """Orchestrate LLM extraction: build prompt, call LLM, parse response.
 
     Args:
@@ -185,23 +189,23 @@ def extract(content: str, llm_client: Optional[Callable] = None) -> dict:
         llm_client: A callable that takes (system_prompt, user_prompt) and returns
                     the LLM response string. If None, returns empty extraction.
 
-    Returns parsed and validated extraction dict.
+    Returns parsed and validated ExtractionResult.
     """
     prompt = build_extraction_prompt(content, PREDICATE_VOCAB)
 
     if llm_client is None:
         logger.warning("No LLM client provided; returning empty extraction.")
-        return {"entities": [], "facts": []}
+        return ExtractionResult()
 
     response_text = llm_client(EXTRACTION_SYSTEM_PROMPT, prompt)
 
     # Guard against None / empty responses from the LLM
     if not response_text or not isinstance(response_text, str) or not response_text.strip():
         logger.warning("LLM returned empty/None response; skipping extraction.")
-        return {"entities": [], "facts": []}
+        return ExtractionResult()
 
     try:
         return parse_extraction_response(response_text)
     except (ValueError, json.JSONDecodeError, KeyError, TypeError) as e:
         logger.warning(f"LLM response parse failed: {e}. Response: {response_text[:200]}")
-        return {"entities": [], "facts": []}
+        return ExtractionResult()

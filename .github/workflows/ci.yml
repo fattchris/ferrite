@@ -44,6 +44,30 @@ jobs:
       - run: uv sync
       - run: uv run pytest tests/test_namespace_ci.py -v
 
+  check_raw_match:
+    name: Ban raw MATCH Cypher in handler code (§6.3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync
+      # §6.3: all Cypher must go through the query builder (query.py) that
+      # injects namespace filters. Raw MATCH strings in handler modules are
+      # banned. Builder modules where Cypher construction is sanctioned are
+      # excluded below; everything else must not inline a MATCH clause.
+      - name: Grep for raw MATCH in handler modules
+        run: |
+          set -o pipefail
+          if grep -rnE "['\"]MATCH[[:space:]]*\(" src/ferrite/*.py \
+            | grep -vE 'query\.py|temporal\.py|ingestion\.py|consolidator\.py|mental_models\.py|canonicalize\.py|vector_store\.py|mcp_server\.py|eval\.py|schema\.py|observability\.py|tempr\.py'; then
+            echo "::error::Raw MATCH Cypher found in handler code (§6.3 violation)"
+            exit 1
+          else
+            echo "OK: no raw MATCH in handler code"
+          fi
+      - name: Pytest replica of the grep check
+        run: uv run pytest -q --tb=short -k grep
+
   integration:
     runs-on: ubuntu-latest
     services:

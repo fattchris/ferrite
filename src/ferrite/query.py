@@ -5,6 +5,10 @@ import logging
 import re
 from typing import Callable, Optional
 
+from neo4j import Driver
+
+from .models import Embedder
+
 logger = logging.getLogger(__name__)
 
 # --- Schema description for LLM prompts ---
@@ -131,7 +135,7 @@ def _is_read_only(query: str) -> bool:
 
 def nl_to_cypher(
     natural_language_query: str,
-    driver,
+    driver: Driver,
     llm_client: Callable[[str, str], str],
 ) -> list[dict]:
     """Translate a natural language query to Cypher, execute it, and return results.
@@ -175,16 +179,18 @@ def nl_to_cypher(
         return search_facts(driver, natural_language_query)
 
 
-def multi_hop_query(driver, entity_name: str, hops: int = 2) -> list[dict]:
+def multi_hop_query(driver: Driver, entity_name: str, hops: int = 2) -> list[dict]:
     """Traverse from an entity through Fact->SUBJECT->Entity and Fact->OBJECT->Entity for N hops.
 
     Starting from the named entity, follow outgoing Fact edges (both SUBJECT and OBJECT
     directions) to reach connected entities, then repeat from those entities.
 
+    Uses variable-length path matching in a single Cypher query to avoid N+1 queries.
+
     Args:
         driver: Neo4j driver instance.
         entity_name: Name of the starting entity.
-        hops: Number of hops to traverse (default 2).
+        hops: Number of hops to traverse (default 2, max 5).
 
     Returns:
         List of dicts with entity name, hop distance, connecting fact, and direction.
@@ -192,15 +198,7 @@ def multi_hop_query(driver, entity_name: str, hops: int = 2) -> list[dict]:
     if hops < 1:
         return []
 
-    # We use APOG-style variable-length path matching through the Fact graph.
-    # Pattern: Entity <-[:SUBJECT]- Fact -[:OBJECT]-> Entity|Literal
-    # and:    Entity <-[:OBJECT]- Fact -[:SUBJECT]-> Entity
-    # Each hop traverses one Fact node in either direction.
-    #
-    # For N hops, we chain: (start) -[:SUBJECT|OBJECT*2..(2*hops)]-> (end)
-    # But we need to be more precise since the path goes through Fact nodes.
-    # The min hop in Neo4j path length is 2 (Entity->Fact->Entity).
-    # So N "hops" = 2*N relationship traversals in Neo4j terms.
+    max_rels = hops * 2  # each hop = 2 relationships (Entity->Fact->Entity)
 
     with driver.session() as session:
         result = session.run(
@@ -210,95 +208,37 @@ def multi_hop_query(driver, entity_name: str, hops: int = 2) -> list[dict]:
             WHERE connected:Entity
               AND connected <> start
               AND connected.id IS NOT NULL
-            WITH DISTINCT connected, collect(DISTINCT f) AS connecting_facts
+              AND length(path) <= $max_rels
+            WITH DISTINCT connected, collect(DISTINCT f) AS connecting_facts, length(path) AS hop_dist
             UNWIND connecting_facts AS cf
-            WITH connected, cf
+            WITH connected, cf, hop_dist
             MATCH (cf)-[:OBJECT]->(obj)
-            WITH connected,
-                 cf.id AS fact_id,
-                 cf.statement AS statement,
-                 cf.predicate AS predicate,
-                 cf.epistemic_state AS epistemic_state,
-                 COALESCE(obj.name, obj.value) AS object_value
             RETURN DISTINCT
                  connected.name AS entity_name,
                  connected.id AS entity_id,
                  connected.summary AS entity_summary,
-                 fact_id,
-                 statement,
-                 predicate,
-                 epistemic_state,
-                 object_value
-            ORDER BY entity_name, predicate
+                 cf.id AS fact_id,
+                 cf.statement AS statement,
+                 cf.predicate AS predicate,
+                 cf.epistemic_state AS epistemic_state,
+                 COALESCE(obj.name, obj.value) AS object_value,
+                 hop_dist / 2 + 1 AS hop
+            ORDER BY entity_name, predicate, hop
             """,
             entity_name=entity_name,
+            max_rels=max_rels,
         )
         results = [dict(r) for r in result]
 
-    # For hops > 1, do recursive expansion
-    if hops > 1:
-        visited = {entity_name}
-        frontier = {r["entity_name"] for r in results}
-        # Tag first-level results with hop=1
-        for r in results:
-            r["hop"] = 1
-        all_results = list(results)
-        current_hop = 1
-
-        while current_hop < hops and frontier:
-            next_frontier = set()
-            for ent_name in frontier:
-                if ent_name in visited:
-                    continue
-                visited.add(ent_name)
-                with driver.session() as session:
-                    sub_result = session.run(
-                        """
-                        MATCH (start:Entity {name: $entity_name})
-                        MATCH path = (start)-[:SUBJECT|OBJECT]-(f:Fact)
-                        -[:SUBJECT|OBJECT]-(connected)
-                        WHERE connected:Entity
-                          AND connected <> start
-                          AND connected.name IS NOT NULL
-                        WITH DISTINCT connected, f
-                        MATCH (f)-[:OBJECT]->(obj)
-                        RETURN DISTINCT
-                             connected.name AS entity_name,
-                             connected.id AS entity_id,
-                             connected.summary AS entity_summary,
-                             f.id AS fact_id,
-                             f.statement AS statement,
-                             f.predicate AS predicate,
-                             f.epistemic_state AS epistemic_state,
-                             COALESCE(obj.name, obj.value) AS object_value,
-                             $hop AS hop
-                        ORDER BY entity_name, f.predicate
-                        """,
-                        entity_name=ent_name,
-                        hop=current_hop + 1,
-                    )
-                    for r in sub_result:
-                        r = dict(r)
-                        if r["entity_name"] not in visited:
-                            all_results.append(r)
-                            next_frontier.add(r["entity_name"])
-            frontier = next_frontier
-            current_hop += 1
-
-        return all_results
-
-    # Add hop=1 to first-level results
-    for r in results:
-        r["hop"] = 1
     return results
 
 
 def search_facts(
-    driver,
+    driver: Driver,
     query: str,
     namespace: Optional[str] = None,
     limit: int = 10,
-    embedder=None,
+    embedder: Optional[Embedder] = None,
 ) -> list[dict]:
     """Hybrid search on fact statements (BM25 + vector cosine via RRF).
 
@@ -325,7 +265,7 @@ def search_facts(
 
 
 def _bm25_search(
-    driver,
+    driver: Driver,
     query: str,
     namespace: Optional[str] = None,
     limit: int = 10,
@@ -360,9 +300,9 @@ def _bm25_search(
 
 
 def vector_search(
-    driver,
+    driver: Driver,
     query_text: str,
-    embedder,
+    embedder: Embedder,
     namespace: Optional[str] = None,
     limit: int = 10,
 ) -> list[dict]:
@@ -408,9 +348,9 @@ def vector_search(
 
 
 def hybrid_search(
-    driver,
+    driver: Driver,
     query_text: str,
-    embedder,
+    embedder: Embedder,
     namespace: Optional[str] = None,
     limit: int = 10,
     rrf_k: int = 60,
@@ -455,7 +395,19 @@ def hybrid_search(
     return results
 
 
-def get_entity_facts(driver, entity_name: str) -> dict:
+def count_entities(driver: Driver) -> int:
+    """Return the total number of Entity nodes in the graph.
+
+    This is the sanctioned location for raw Cypher (§6.3): the query builder
+    module. Handler modules (api.py, quality_gates.py, …) must call this
+    instead of inlining a MATCH clause.
+    """
+    with driver.session() as session:
+        record = session.run("MATCH (e:Entity) RETURN count(e) AS c").single()
+        return int(record["c"]) if record else 0
+
+
+def get_entity_facts(driver: Driver, entity_name: str) -> dict:
     """Get all facts where entity is subject or object.
 
     Args:
@@ -581,10 +533,10 @@ INJECT_KEYWORD_MAP: dict[str, list[str]] = {
 
 
 def inject_context(
-    driver,
+    driver: Driver,
     turn_text: str,
     llm_client: Callable[[str, str], str],
-    embedder=None,
+    embedder: Optional[Embedder] = None,
     token_budget: int = 1500,
     rrf_score_floor: float = 0.001,
 ) -> list[dict]:
@@ -647,7 +599,7 @@ def inject_context(
 
 
 def _inject_context_legacy(
-    driver,
+    driver: Driver,
     turn_text: str,
     llm_client: Callable[[str, str], str],
 ) -> list[dict]:
@@ -692,8 +644,8 @@ def _inject_context_legacy(
             for ent in llm_entities:
                 if isinstance(ent, str) and ent.strip():
                     entity_names.add(ent.strip().lower())
-    except Exception:
-        pass  # Non-fatal — keyword extraction is the primary strategy
+    except Exception as e:
+        logger.debug(f"LLM entity extraction failed: {e}")  # Non-fatal — keyword extraction is the primary strategy
 
     if not entity_names:
         return []
@@ -798,8 +750,8 @@ def _inject_context_legacy(
                 if r["id"] not in seen_fact_ids:
                     candidate_facts.append(r)
                     seen_fact_ids.add(r["id"])
-        except Exception:
-            pass  # Fulltext may fail if query has special chars
+        except Exception as e:
+            logger.debug(f"Fulltext search failed: {e}")  # Fulltext may fail if query has special chars
 
     if not candidate_facts:
         return []

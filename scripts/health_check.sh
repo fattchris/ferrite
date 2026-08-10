@@ -10,11 +10,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
+# Load .env for credentials
+source "$PROJECT_DIR/.env" 2>/dev/null
+NEO4J_PASS="${NEO4J_PASSWORD:-${FERRITE_NEO4J_PASSWORD:-}}"
+
 HEALTHY=0
 
 # 1. Neo4j — cypher RETURN 1
 echo -n "[Neo4j]  Checking... "
-NEO4J_RESULT=$(docker compose exec -T neo4j cypher -a bolt://localhost:7687 -u neo4j -p ferrite123 "RETURN 1" 2>&1)
+NEO4J_RESULT=$(docker compose exec -T neo4j cypher -a bolt://localhost:7687 -u neo4j -p "$NEO4J_PASS" "RETURN 1" 2>&1)
 if echo "$NEO4J_RESULT" | grep -q "1"; then
   echo "OK"
 else
@@ -36,7 +40,7 @@ fi
 
 # 3. Queue depth — LLEN ferrite:queue
 echo -n "[Queue]  Checking depth... "
-QUEUE_DEPTH=$(docker compose exec -T redis redis-cli LLEN ferrite:queue 2>&1 | tr -d '[:space:]')
+QUEUE_DEPTH=$(docker compose exec -T redis redis-cli LLEN ferrite:ingestion:queue 2>&1 | tr -d '[:space:]')
 if [[ "$QUEUE_DEPTH" =~ ^[0-9]+$ ]]; then
   if [ "$QUEUE_DEPTH" -lt 1000 ]; then
     echo "OK (depth: $QUEUE_DEPTH)"

@@ -6,10 +6,10 @@ import threading
 import time
 
 import uvicorn
-from neo4j import GraphDatabase
 
 from .api import create_app
 from .config import get_settings
+from .db import get_driver
 from .ingestion import IngestionPipeline
 from .schema import init_schema
 from .structured_logging import setup_logging
@@ -41,14 +41,8 @@ def main():
 
     # Initialize Neo4j schema
     logger.info("Initializing Neo4j schema...")
-    schema_driver = GraphDatabase.driver(
-        settings.NEO4J_URI,
-        auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
-    )
-    try:
-        init_schema(schema_driver)
-    finally:
-        schema_driver.close()
+    schema_driver = get_driver()
+    init_schema(schema_driver)
 
     # Create ingestion pipeline
     pipeline = IngestionPipeline(
@@ -69,7 +63,7 @@ def main():
     app = create_app(pipeline=pipeline)
 
     try:
-        uvicorn.run(app, host="0.0.0.0", port=8000)
+        uvicorn.run(app, host="0.0.0.0", port=settings.SERVER_PORT)
     finally:
         logger.info("Shutting down...")
         stop_event.set()

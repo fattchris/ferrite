@@ -235,19 +235,17 @@ def test_llm_extraction(neo4j_driver, redis_client):
     extraction = extract(content, llm_client)
 
     # Verify extraction structure
-    assert "entities" in extraction
-    assert "facts" in extraction
-    assert len(extraction["entities"]) >= 2  # Alice, Acme Corp, Bob, New York
-    assert len(extraction["facts"]) >= 2  # works_at, lives_in, ceo_of
+    assert len(extraction.entities) >= 2  # Alice, Acme Corp, Bob, New York
+    assert len(extraction.facts) >= 2  # works_at, lives_in, ceo_of
 
     # Verify all predicates are valid
-    for fact in extraction["facts"]:
-        assert is_valid_predicate(fact["predicate"]), f"Invalid predicate: {fact['predicate']}"
+    for fact in extraction.facts:
+        assert is_valid_predicate(fact.predicate), f"Invalid predicate: {fact.predicate}"
 
     # Verify entities have names
-    for ent in extraction["entities"]:
-        assert "name" in ent
-        assert len(ent["name"]) > 0
+    for ent in extraction.entities:
+        assert ent.name
+        assert len(ent.name) > 0
 
 
 @pytest.mark.skipif(

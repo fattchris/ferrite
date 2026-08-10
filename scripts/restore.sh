@@ -6,7 +6,7 @@ set -euo pipefail
 # Stops containers, loads Neo4j dump, restores volumes, restarts.
 
 BACKUP_DIR="/backups"
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 
 if [ $# -lt 1 ]; then
   echo "Usage: $0 <YYYYMMDD>"

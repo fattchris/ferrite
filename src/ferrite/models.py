@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal, Optional, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -78,3 +78,57 @@ class HealthResponse(BaseModel):
     neo4j: str
     redis: str
     queue_depth: int
+
+
+# --- Issue 25: Typed extraction results ---
+
+class ExtractedEntity(BaseModel):
+    name: str
+    type: Literal["entity", "concept"] = "entity"
+    summary: str = ""
+
+
+class ExtractedFact(BaseModel):
+    subject: str
+    predicate: str
+    object: str
+    object_type: Literal["entity", "literal"] = "entity"
+    certainty: Literal["stated", "inferred", "speculative"] = "stated"
+    assertion_source: Literal["user", "tool_result", "model"] = "model"
+    valid_at: Optional[str] = None
+    negation: bool = False
+
+
+class ExtractionResult(BaseModel):
+    entities: list[ExtractedEntity] = Field(default_factory=list)
+    facts: list[ExtractedFact] = Field(default_factory=list)
+
+
+# --- Issue 28: Typed key info ---
+
+class KeyInfo(BaseModel):
+    key_id: str
+    agent_name: str
+    scopes: list[str] = Field(default_factory=lambda: ["read", "write"])
+    namespaces: list[str] = Field(default_factory=lambda: ["shared"])
+
+
+# --- Issue 29: Embedder protocol ---
+
+class Embedder(Protocol):
+    """Protocol for embedder implementations (e.g. OllamaEmbedder)."""
+
+    def embed(self, text: str) -> Optional[list[float]]:
+        ...
+
+
+# --- Issue 30: Circuit breaker state model ---
+
+class CircuitBreakerState(BaseModel):
+    state: str
+    failure_count: int
+    success_count: int
+    failure_threshold: int
+    cooldown_seconds: float
+    half_open_calls: int
+    last_failure_time: Optional[float] = None

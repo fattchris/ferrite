@@ -18,11 +18,13 @@ Each strategy has a 2s timeout. Degradation ladder:
 
 from __future__ import annotations
 
+import calendar
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from .models import Embedder
 from .query import _bm25_search, vector_search
 
 logger = logging.getLogger(__name__)
@@ -248,7 +250,6 @@ def _parse_time_expression(text: str) -> Optional[tuple[datetime, datetime]]:
         year = now.year
         if month > now.month:
             year = now.year - 1
-        import calendar
         _, last_day = calendar.monthrange(year, month)
         return (datetime(year, month, 1, tzinfo=timezone.utc),
                 datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc))
@@ -256,12 +257,12 @@ def _parse_time_expression(text: str) -> Optional[tuple[datetime, datetime]]:
     # "last week" → 7 days ago to now
     if "last week" in text_lower:
         return (now.replace(hour=0, minute=0, second=0, microsecond=0)
-                - __import__("datetime").timedelta(days=7),
+                - timedelta(days=7),
                 now)
 
     # "yesterday" → yesterday
     if "yesterday" in text_lower:
-        yesterday = now - __import__("datetime").timedelta(days=1)
+        yesterday = now - timedelta(days=1)
         start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
         end = yesterday.replace(hour=23, minute=59, second=59)
         return (start, end)
@@ -285,7 +286,6 @@ def _parse_time_expression(text: str) -> Optional[tuple[datetime, datetime]]:
             start = datetime(year, month, day, tzinfo=timezone.utc)
             end = datetime(year, month, day, 23, 59, 59, tzinfo=timezone.utc)
         else:
-            import calendar
             _, last_day = calendar.monthrange(year, month)
             start = datetime(year, month, 1, tzinfo=timezone.utc)
             end = datetime(year, month, last_day, 23, 59, 59, tzinfo=timezone.utc)
@@ -373,7 +373,7 @@ def _run_strategy_with_timeout(
 def tempr_search(
     driver,
     query_text: str,
-    embedder=None,
+    embedder: Optional[Embedder] = None,
     namespace: Optional[str] = None,
     limit: int = 10,
     rrf_k: int = DEFAULT_RRF_K,

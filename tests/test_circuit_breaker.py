@@ -112,9 +112,9 @@ class TestGetState:
     def test_state_dict(self):
         cb = CircuitBreaker(failure_threshold=5, cooldown_seconds=60)
         state = cb.get_state()
-        assert state["state"] == "closed"
-        assert state["failure_count"] == 0
-        assert state["failure_threshold"] == 5
+        assert state.state == "closed"
+        assert state.failure_count == 0
+        assert state.failure_threshold == 5
 
 
 class TestSingleton:

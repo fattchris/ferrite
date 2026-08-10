@@ -4,6 +4,9 @@ import logging
 import re
 from typing import Callable, Optional
 
+from neo4j import Driver
+
+from .embeddings import cosine_similarity
 from .models import Entity
 
 logger = logging.getLogger(__name__)
@@ -28,25 +31,13 @@ def normalize_name(name: str) -> str:
     return s
 
 
-def get_embedding(embedding_func: Callable, text: str) -> list[float]:
+def get_embedding(embedding_func: Callable[[str], list[float]], text: str) -> list[float]:
     """Call the embedding function and return a vector."""
     return embedding_func(text)
 
 
-def cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Compute cosine similarity between two vectors."""
-    if not a or not b or len(a) != len(b):
-        return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x * x for x in a) ** 0.5
-    norm_b = sum(x * x for x in b) ** 0.5
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
-
-
 def resolve_entity(
-    driver,
+    driver: Driver,
     name: str,
     embedding_func: Optional[Callable] = None,
     entity_type: str = "entity",
@@ -89,7 +80,7 @@ def resolve_entity(
             summary=record["summary"],
         )
 
-    # Step 3: Embedding-based search
+    # Step 3: Embedding-based ANN search via Neo4j vector index
     best_entity = None
     best_similarity = 0.0
 
@@ -97,19 +88,40 @@ def resolve_entity(
         query_embedding = get_embedding(embedding_func, name)
 
         with driver.session() as session:
-            result = session.run(
-                """
-                MATCH (e:Entity)
-                WHERE e.embedding IS NOT NULL
-                RETURN e.id AS id, e.type AS type, e.name AS name,
-                       e.summary AS summary, e.embedding AS embedding
-                """
-            )
-            for record in result:
-                sim = cosine_similarity(query_embedding, record["embedding"])
-                if sim > best_similarity:
-                    best_similarity = sim
-                    best_entity = record
+            try:
+                # Use Neo4j vector index for ANN search (§7.2.2)
+                result = session.run(
+                    """
+                    CALL db.index.vector.queryNodes('entity_embeddings', 5, $embedding)
+                    YIELD node AS e, score
+                    RETURN e.id AS id, e.type AS type, e.name AS name,
+                           e.summary AS summary, score
+                    """,
+                    embedding=query_embedding,
+                )
+                for record in result:
+                    sim = record["score"]
+                    if sim > best_similarity:
+                        best_similarity = sim
+                        best_entity = record
+            except Exception as e:
+                # Fallback: scan all entities with embeddings (pre-index path)
+                logger.debug(
+                    "Vector index query failed, falling back to full scan: %s", e
+                )
+                result = session.run(
+                    """
+                    MATCH (e:Entity)
+                    WHERE e.embedding IS NOT NULL
+                    RETURN e.id AS id, e.type AS type, e.name AS name,
+                           e.summary AS summary, e.embedding AS embedding
+                    """
+                )
+                for record in result:
+                    sim = cosine_similarity(query_embedding, record["embedding"])
+                    if sim > best_similarity:
+                        best_similarity = sim
+                        best_entity = record
 
     # Step 4: Auto-merge at >= 0.95
     if best_entity and best_similarity >= 0.95:
@@ -136,7 +148,7 @@ def resolve_entity(
 
 
 def create_entity(
-    driver,
+    driver: Driver,
     name: str,
     entity_type: str = "entity",
     summary: Optional[str] = None,
@@ -181,7 +193,7 @@ def create_entity(
     return entity
 
 
-def _create_alias(driver, entity_id: str, norm: str) -> None:
+def _create_alias(driver: Driver, entity_id: str, norm: str) -> None:
     """Create an ALIAS edge from an existing entity to a normalized name."""
     with driver.session() as session:
         session.run(
@@ -195,7 +207,7 @@ def _create_alias(driver, entity_id: str, norm: str) -> None:
         )
 
 
-def merge_entities(driver, source_id: str, target_id: str) -> None:
+def merge_entities(driver: Driver, source_id: str, target_id: str) -> None:
     """Create a MERGED_INTO edge from source entity to target entity.
     Merges are additive — never destructive.
     """
