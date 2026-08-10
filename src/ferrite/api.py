@@ -629,6 +629,17 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         from .metrics import get_metrics
         from .observability import HealthMonitor
 
+        def _quote_tags(tags_str: str) -> str:
+            """Quote tag values for Prometheus label compliance."""
+            parts = []
+            for t in tags_str.split(","):
+                if "=" in t:
+                    k, v = t.split("=", 1)
+                    parts.append(f'{k}="{v}"')
+                else:
+                    parts.append(t)
+            return ",".join(parts)
+
         snap = get_metrics().snapshot()
         lines: list[str] = [
             "# HELP ferrite_info Ferrite build info",
@@ -644,7 +655,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             # Parse tag syntax: name{tag=val}
             if "{" in key:
                 base, rest = key.split("{", 1)
-                tags = rest.rstrip("}")
+                tags = _quote_tags(rest.rstrip("}"))
                 lines.append(f'ferrite_counter_total{{metric="{base}",{tags}}} {val}')
             else:
                 lines.append(f'ferrite_counter_total{{metric="{key}"}} {val}')
@@ -656,7 +667,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         for key, val in snap.get("gauges", {}).items():
             if "{" in key:
                 base, rest = key.split("{", 1)
-                tags = rest.rstrip("}")
+                tags = _quote_tags(rest.rstrip("}"))
                 lines.append(f'ferrite_gauge{{metric="{base}",{tags}}} {val}')
             else:
                 lines.append(f'ferrite_gauge{{metric="{key}"}} {val}')
@@ -668,7 +679,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         for key, stats in snap.get("histograms", {}).items():
             if "{" in key:
                 base, rest = key.split("{", 1)
-                tags = rest.rstrip("}")
+                tags = _quote_tags(rest.rstrip("}"))
                 label = f'metric="{base}",{tags}'
             else:
                 label = f'metric="{key}"'
