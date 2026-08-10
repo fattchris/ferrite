@@ -91,7 +91,9 @@ prompt() {
     local question=$2
     local default=${3:-}
     local answer
-    if [ -n "$default" ]; then
+    if [ "$NON_INTERACTIVE" = true ]; then
+        answer="$default"
+    elif [ -n "$default" ]; then
         read -rp "$(echo -e "  ${BOLD}${question}${NC} [${default}]: ")" answer
         answer="${answer:-$default}"
     else
@@ -105,7 +107,9 @@ prompt_yn() {
     local question=$2
     local default=${3:-n}
     local answer
-    if [ "$default" = "y" ]; then
+    if [ "$NON_INTERACTIVE" = true ]; then
+        answer="$default"
+    elif [ "$default" = "y" ]; then
         read -rp "$(echo -e "  ${BOLD}${question}${NC} [Y/n]: ")" answer
         answer="${answer:-y}"
     else
@@ -733,6 +737,124 @@ step_summary() {
     echo -e "  ${BOLD}Logs:${NC} ${CYAN}$INSTALL_LOG${NC}"
     echo ""
 }
+
+# ============================================================================
+# CLI Flag Parsing
+# ============================================================================
+
+NON_INTERACTIVE=false
+
+show_help() {
+    cat <<'EOF'
+Ferrite Installer — Temporal Knowledge Graph Memory System
+
+Usage: bash scripts/install.sh [OPTIONS]
+
+Options:
+  --non-interactive  Run with defaults (no prompts) — for CI/automated installs
+  --status           Show current deployment state and exit
+  --uninstall        Stop containers and remove volumes/data
+  --help             Show this help message and exit
+
+Examples:
+  bash scripts/install.sh                       # Interactive wizard
+  bash scripts/install.sh --non-interactive      # CI/automated
+  bash scripts/install.sh --status               # Check deployment
+  bash scripts/install.sh --uninstall             # Remove everything
+EOF
+    exit 0
+}
+
+show_status() {
+    banner "Ferrite Status"
+    echo ""
+    if [ ! -f .env ]; then
+        echo -e "  ${YELLOW}⚠${NC} .env not found — Ferrite not installed here."
+        exit 0
+    fi
+    source .env 2>/dev/null
+    echo -e "  ${BOLD}Project:${NC} $(pwd)"
+    echo -e "  ${BOLD}.env:${NC}    found"
+    echo ""
+    echo -e "  ${BOLD}Containers:${NC}"
+    if docker compose -f docker-compose.prod.yml ps 2>/dev/null | grep -q "Up"; then
+        docker compose -f docker-compose.prod.yml ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null
+    else
+        echo -e "  ${RED}✗${NC} No containers running"
+    fi
+    echo ""
+    echo -e "  ${BOLD}Volumes:${NC}"
+    for v in ferrite_neo4j_data ferrite_redis_data ferrite_ferrite_api_data ferrite_prometheus_data ferrite_caddy_data; do
+        if docker volume inspect "$v" >/dev/null 2>&1; then
+            local sz
+            sz=$(docker volume inspect "$v" --format '{{.Mountpoint}}' 2>/dev/null)
+            echo -e "    ${GREEN}✓${NC} $v"
+        else
+            echo -e "    ${RED}✗${NC} $v (not found)"
+        fi
+    done
+    echo ""
+    echo -e "  ${BOLD}Endpoints:${NC}"
+    local api_ok
+    api_ok=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/health 2>/dev/null || echo "000")
+    if [ "$api_ok" = "200" ]; then
+        echo -e "    ${GREEN}✓${NC} API:     http://localhost:8001"
+        echo -e "    ${GREEN}✓${NC} Health:  $(curl -s http://localhost:8001/health)"
+    else
+        echo -e "    ${RED}✗${NC} API:     http://localhost:8001 (HTTP $api_ok)"
+    fi
+    echo ""
+    exit 0
+}
+
+do_uninstall() {
+    banner "Uninstall Ferrite"
+    echo ""
+    if [ "${1:-}" != "--yes" ] && [ "$NON_INTERACTIVE" = false ]; then
+        read -p "  This will stop all containers and DELETE all data. Continue? [y/N] " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+            echo -e "  ${YELLOW}Cancelled.${NC}"
+            exit 0
+        fi
+    fi
+    echo -e "  ${YELLOW}Stopping containers...${NC}"
+    docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+    echo -e "  ${YELLOW}Removing volumes...${NC}"
+    for v in ferrite_neo4j_data ferrite_redis_data ferrite_ferrite_api_data ferrite_prometheus_data ferrite_caddy_data; do
+        docker volume rm "$v" 2>/dev/null && echo -e "    ${GREEN}✓${NC} Removed $v" || true
+    done
+    echo ""
+    echo -e "  ${GREEN}✓${NC} Ferrite uninstalled."
+    echo -e "  ${YELLOW}ℹ${NC} .env file preserved. Remove manually if needed: rm .env"
+    echo ""
+    exit 0
+}
+
+# Parse flags
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --non-interactive)
+            NON_INTERACTIVE=true
+            shift
+            ;;
+        --status)
+            show_status
+            ;;
+        --uninstall)
+            shift
+            do_uninstall "${1:-}"
+            exit 0
+            ;;
+        --help|-h)
+            show_help
+            ;;
+        *)
+            echo "Unknown flag: $1"
+            echo "Run with --help for usage."
+            exit 1
+            ;;
+    esac
+done
 
 # ============================================================================
 # Main
