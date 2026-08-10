@@ -38,6 +38,11 @@ services:
       - NEO4J_dbms_memory_transaction_total_max=256M
     mem_limit: 4g
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     healthcheck:
       test: ["CMD-SHELL", "cypher-shell -u neo4j -p ${NEO4J_PASSWORD} 'RETURN 1' || exit 1"]
       interval: 30s
@@ -70,6 +75,11 @@ services:
       timeout: 5s
       retries: 3
     mem_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - ferrite_net
 
@@ -95,12 +105,20 @@ services:
       - LLM_MODEL=glm-5.2
       - EMBEDDING_MODEL=nomic-embed-text
       - FERRITE_API_KEY=${FERRITE_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ferrite_api_data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
     mem_limit: 2g
+    # Structured JSON logs → stderr → Docker json-file driver with rotation.
+    # Host-side: `docker logs ferrite-api` or `scripts/logs.sh`
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 15s

@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     # Namespace
     NAMESPACE_DEFAULT: str = "shared"
 
+    # Logging (§8 — structured JSON to stderr for Docker capture)
+    LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
+
     # Rate limiting (§4.1)
     READ_RATE_LIMIT: int = 100
     WRITE_RATE_LIMIT: int = 20

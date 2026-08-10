@@ -1,6 +1,7 @@
 """Entry point: schema init, background worker, and uvicorn launch."""
 
 import logging
+import os
 import threading
 import time
 
@@ -11,8 +12,12 @@ from .api import create_app
 from .config import get_settings
 from .ingestion import IngestionPipeline
 from .schema import init_schema
+from .structured_logging import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+# Configure structured JSON logging before any app code runs.
+# LOG_LEVEL env var controls verbosity (DEBUG, INFO, WARNING, ERROR).
+# Logs go to stderr → captured by Docker → `docker logs ferrite-api`.
+setup_logging(level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 

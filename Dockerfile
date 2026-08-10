@@ -20,7 +20,8 @@ ENV NEO4J_URI=bolt://localhost:7687 \
     NEO4J_USER=neo4j \
     NEO4J_PASSWORD=ferrite123 \
     REDIS_URL=redis://localhost:6379 \
-    LLM_MODEL=glm-5.2
+    LLM_MODEL=glm-5.2 \
+    LOG_LEVEL=INFO
 
 EXPOSE 8000 8001
 

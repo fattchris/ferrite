@@ -50,9 +50,13 @@ def setup_logging(
 ) -> None:
     """Configure structured JSON logging.
 
+    Logs go to stderr as structured JSON lines. Docker captures stderr
+    via the json-file driver. Host-side: `docker logs ferrite-api`
+    or `scripts/logs.sh`.
+
     Args:
         level: Log level (DEBUG, INFO, WARNING, ERROR).
-        log_file: Optional file path. If None, logs to stderr.
+        log_file: Optional file path. If None, logs to stderr only.
     """
     formatter = FerriteJSONFormatter()
 
@@ -72,6 +76,11 @@ def setup_logging(
         root.removeHandler(h)
     for h in handlers:
         root.addHandler(h)
+
+    # Silence chatty third-party loggers (Neo4j driver internals, etc.)
+    for noisy in ("neo4j", "neo4j.bolt", "neo4j.io", "httpx", "httpcore",
+                   "urllib3", "uvicorn.access"):
+        logging.getLogger(noisy).setLevel("WARNING")
 
 
 @contextmanager

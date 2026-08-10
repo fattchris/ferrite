@@ -41,8 +41,13 @@ from .models import (
     StoreResponse,
 )
 from .rate_limit import check_rate_limit
+from .structured_logging import setup_logging
 from .temporal import get_history_as_of_knowledge, get_history_as_of_world
 
+# Configure structured JSON logging at module import time.
+# This runs before any request handling, so all logs are JSON-formatted.
+# Docker captures stderr → `docker logs ferrite-api` or scripts/logs.sh.
+setup_logging(level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
