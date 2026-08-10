@@ -9,15 +9,3 @@ scrape_configs:
       - targets: ['ferrite-api:8001']
         labels:
           service: ferrite-api
-
-  - job_name: 'neo4j'
-    static_configs:
-      - targets: ['neo4j:2004']
-        labels:
-          service: neo4j
-
-  - job_name: 'redis'
-    static_configs:
-      - targets: ['redis:6379']
-        labels:
-          service: redis

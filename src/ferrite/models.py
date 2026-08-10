@@ -19,7 +19,7 @@ class FactBase(BaseModel):
     valid_at_inferred: bool = True
     invalid_at: Optional[datetime] = None
     recorded_at: datetime = Field(default_factory=datetime.utcnow)
-    namespace: Literal["shared", "personal"] = "shared"
+    namespace: Literal["shared", "personal", "e2e-test"] = "shared"
 
 
 class Entity(BaseModel):

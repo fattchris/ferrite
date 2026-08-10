@@ -119,11 +119,45 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
     # Initialize pipeline if not provided
     if pipeline is None:
         try:
+            # Build LLM client callable for extraction
+            def _make_llm_client():
+                llm_key = settings.LLM_API_KEY
+                llm_base = getattr(settings, "LLM_BASE_URL", "http://localhost:4000/v1")
+                llm_model = getattr(settings, "LLM_MODEL", "glm-5.2")
+                if not llm_key:
+                    return None
+
+                import json as _json
+                import urllib.request as _urllib
+
+                def _llm_client(system_prompt: str, user_prompt: str) -> str:
+                    data = _json.dumps({
+                        "model": llm_model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0.1,
+                    }).encode()
+                    req = _urllib.Request(
+                        f"{llm_base}/chat/completions",
+                        data=data,
+                        headers={
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {llm_key}",
+                        },
+                    )
+                    with _urllib.urlopen(req, timeout=120) as r:
+                        return _json.loads(r.read())["choices"][0]["message"]["content"]
+
+                return _llm_client
+
             pipeline = IngestionPipeline(
                 redis_url=settings.REDIS_URL,
                 neo4j_uri=settings.NEO4J_URI,
                 neo4j_user=settings.NEO4J_USER,
                 neo4j_password=settings.NEO4J_PASSWORD,
+                llm_client=_make_llm_client(),
             )
         except Exception as e:
             logger.warning(f"Could not initialize pipeline: {e}")
@@ -131,6 +165,22 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
 
     # Initialize SQLite key store on startup
     ks_init_db()
+
+    # Initialize Neo4j schema (indexes, constraints) on startup
+    @app.on_event("startup")
+    async def init_neo4j_schema():
+        try:
+            from .schema import init_schema
+            from neo4j import GraphDatabase
+            schema_driver = GraphDatabase.driver(
+                settings.NEO4J_URI,
+                auth=(settings.NEO4J_USER, settings.NEO4J_PASSWORD),
+            )
+            init_schema(schema_driver)
+            schema_driver.close()
+            logger.info("Neo4j schema initialized")
+        except Exception as e:
+            logger.warning(f"Could not initialize Neo4j schema: {e}")
 
     # Start in-proc async consumer (§7.1)
     @app.on_event("startup")

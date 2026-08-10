@@ -5,9 +5,9 @@ set -euo pipefail
 # Nightly: stop writers, BGSAVE redis, stop neo4j, dump DB, copy volumes,
 # combine into dated tar.gz, 30-day retention, restart services.
 
-BACKUP_DIR="/backups"
+BACKUP_DIR="${BACKUP_DIR:-/Users/fontes/ferrite/backups}"
 DATE=$(date +%Y%m%d)
-COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 
 # Resolve the project directory (where this script lives is scripts/)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

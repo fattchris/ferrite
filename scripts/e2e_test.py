@@ -9,7 +9,8 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 BASE = "http://localhost:8001"
-API_KEY = "test-secret"
+import os
+API_KEY = os.environ.get("FERRITE_API_KEY", "test-secret")
 HEADERS = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
 
 passed = 0
@@ -60,8 +61,10 @@ def seed_test_data():
     """Seed a few entities + facts directly into Neo4j."""
     from neo4j import GraphDatabase
 
+    import os
+    neo4j_pass = os.environ.get("NEO4J_PASSWORD", "ferrite123")
     driver = GraphDatabase.driver(
-        "bolt://localhost:7687", auth=("neo4j", "ferrite123")
+        "bolt://localhost:7687", auth=("neo4j", neo4j_pass)
     )
     with driver.session() as s:
         # Clean test namespace

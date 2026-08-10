@@ -11,9 +11,7 @@ services:
     image: caddy:2-alpine
     container_name: ferrite-caddy
     restart: unless-stopped
-    ports:
-      - "443:443"
-      - "80:80"
+    network_mode: host
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -21,8 +19,6 @@ services:
     depends_on:
       ferrite-api:
         condition: service_healthy
-    networks:
-      - ferrite_net
 
   neo4j:
     image: neo4j:5-community
@@ -82,8 +78,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ferrite-api
-    expose:
-      - "8001"
+    ports:
+      - "8001:8001"
     depends_on:
       neo4j:
         condition: service_healthy

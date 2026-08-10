@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 NEO4J_URI = "bolt://localhost:7687"
 NEO4J_USER = "neo4j"
-NEO4J_PASSWORD = "ferrite123"
+NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "ferrite123")
 REDIS_URL = "redis://localhost:6379"
 LITELLM_BASE_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
 LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "sk-litellm-cd2008b7d243eb3c14a96ef55f80f529")
