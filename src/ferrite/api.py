@@ -850,6 +850,69 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             return FileResponse(wiki)
         return JSONResponse({"detail": "Wiki not available"}, status_code=404)
 
+    @app.get("/files/{episode_id}", include_in_schema=False)
+    async def get_source_file(episode_id: str, request: Request):
+        """Retrieve the original source file for an episode.
+
+        Returns the raw text content that was ingested, so you can
+        pull up the original arxiv paper, web page, etc. any time.
+        """
+        from .file_repo import find_by_episode, get_content
+        from .db import get_driver
+        from .query import get_episode_source_file
+
+        # First try the file repo index
+        rel_path = find_by_episode(episode_id)
+        if rel_path:
+            content = get_content(rel_path)
+            if content is not None:
+                return JSONResponse({
+                    "episode_id": episode_id,
+                    "source_file": rel_path,
+                    "content": content,
+                    "size": len(content.encode("utf-8")),
+                })
+
+        # Fallback: check Neo4j Episode node for source_file property
+        try:
+            driver = get_driver()
+            ep_data = get_episode_source_file(driver, episode_id)
+            if ep_data and ep_data.get("source_file"):
+                content = get_content(ep_data["source_file"])
+                if content is not None:
+                    return JSONResponse({
+                        "episode_id": episode_id,
+                        "source_file": ep_data["source_file"],
+                        "content": content,
+                        "size": len(content.encode("utf-8")),
+                    })
+            # Last resort: return the episode content from Neo4j
+            if ep_data and ep_data.get("content"):
+                return JSONResponse({
+                    "episode_id": episode_id,
+                    "source_file": None,
+                    "content": ep_data["content"],
+                    "source": ep_data["source"],
+                    "content_type": ep_data["content_type"],
+                    "size": len(ep_data["content"].encode("utf-8")),
+                })
+        except Exception as e:
+            logger.warning(f"Failed to look up source file for {episode_id}: {e}")
+
+        raise HTTPException(status_code=404, detail="No source file found for this episode")
+
+    @app.get("/files", include_in_schema=False)
+    async def list_source_files(
+        request: Request,
+        content_type: Optional[str] = Query(None),
+        limit: int = Query(50, le=200),
+        offset: int = Query(0),
+    ):
+        """List all source files in the repository."""
+        from .file_repo import list_files as _list_files
+        files = _list_files(content_type=content_type, limit=limit, offset=offset)
+        return JSONResponse({"files": files, "count": len(files)})
+
     @app.post("/install/generate-secrets", include_in_schema=False)
     async def generate_secrets(request: Request):
         """Generate secure random secrets for .env file."""

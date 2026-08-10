@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     # Key store
     KEYS_DB_PATH: str = str(Path.home() / "ferrite" / "data" / "keys.db")
 
+    # File repository — original source documents (arxiv, web, code, etc.)
+    FILE_REPO_PATH: str = str(Path.home() / "ferrite" / "data" / "files")
+
     # Logging (§8 — structured JSON to stderr for Docker capture)
     LOG_LEVEL: str = os.environ.get("LOG_LEVEL", "INFO")
 

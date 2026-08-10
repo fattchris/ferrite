@@ -108,6 +108,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ferrite_api_data:/app/data
+      - ferrite_file_repo:/app/data/files
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -144,6 +145,7 @@ volumes:
   neo4j_data:
   redis_data:
   ferrite_api_data:
+  ferrite_file_repo:
   caddy_data:
   caddy_config:
   prometheus_data:

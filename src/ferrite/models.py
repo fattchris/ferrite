@@ -36,6 +36,7 @@ class Episode(BaseModel):
     source: dict
     namespace: str = "shared"
     recorded_at: datetime = Field(default_factory=datetime.utcnow)
+    source_file: Optional[str] = None  # relative path in file repo (e.g., "arxiv/2401.12345.txt")
 
 
 class Observation(BaseModel):

@@ -758,3 +758,26 @@ def _inject_context_legacy(
 
     # Return all candidate facts directly — skip LLM relevance filter (too lossy)
     return candidate_facts
+
+
+def get_episode_source_file(driver, episode_id: str) -> dict | None:
+    """Get source file info for an episode from Neo4j.
+
+    Returns dict with keys: source_file, content, source, content_type
+    or None if episode not found.
+    """
+    with driver.session() as session:
+        result = session.run(
+            "MATCH (ep:Episode {id: $episode_id}) "
+            "RETURN ep.source_file, ep.content, ep.source, ep.content_type",
+            episode_id=episode_id,
+        )
+        record = result.single()
+        if record is None:
+            return None
+        return {
+            "source_file": record["ep.source_file"],
+            "content": record["ep.content"],
+            "source": record["ep.source"],
+            "content_type": record["ep.content_type"],
+        }

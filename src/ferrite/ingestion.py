@@ -171,7 +171,21 @@ class IngestionPipeline:
 
         Store is always async through the queue interface (§6.4, A9).
         LRU index keeps {episode_id, raw_content} for RYOW consistency.
+        Saves the original content to the file repository (§10.4).
         """
+        # Save original content to file repository
+        try:
+            from .file_repo import save_content
+            episode.source_file = save_content(
+                content=episode.content,
+                content_type=episode.content_type,
+                source=episode.source,
+                episode_id=episode.id,
+            )
+            logger.info(f"Saved source file for episode {episode.id}: {episode.source_file}")
+        except Exception as e:
+            logger.warning(f"Failed to save source file for episode {episode.id}: {e}")
+
         episode_data = episode.model_dump_json()
         self.redis_client.hset(
             f"{EPISODE_KEY_PREFIX}{episode.id}", "data", episode_data
@@ -477,6 +491,7 @@ class IngestionPipeline:
                 SET ep.content = $content,
                     ep.content_type = $content_type,
                     ep.source = $source,
+                    ep.source_file = $source_file,
                     ep.namespace = $namespace,
                     ep.recorded_at = $recorded_at
                 """,
@@ -484,6 +499,7 @@ class IngestionPipeline:
                 content=episode.content,
                 content_type=episode.content_type,
                 source=json.dumps(episode.source),
+                source_file=episode.source_file,
                 namespace=episode.namespace,
                 recorded_at=episode.recorded_at.isoformat(),
             )

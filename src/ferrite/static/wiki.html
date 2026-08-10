@@ -597,6 +597,8 @@
                     <button class="tab-btn active" onclick="switchTab(event, 'facts')">📋 Facts (${facts.length})</button>
                     <button class="tab-btn" onclick="switchTab(event, 'graph')">🌐 Graph</button>
                     <button class="tab-btn" onclick="switchTab(event, 'timeline')">📅 Timeline</button>
+                    <button class="tab-btn" onclick="switchTab(event, 'source')">📄 Source</button>
+                    <button class="tab-btn" onclick="switchTab(event, 'backlinks')">🔗 Backlinks</button>
                 </div>
 
                 <div class="tab-panel active" id="panel-facts">
@@ -638,6 +640,24 @@
                 <div class="tab-panel" id="panel-timeline">
                     <div class="timeline">
                         ${renderTimeline(facts.map(f => ({...f, subject_name: name, predicate: (f.statement||'').split(' ')[1] || '—', object_name: (f.statement||'').split(' ').slice(2).join(' ')})))}
+                    </div>
+                </div>
+
+                <div class="tab-panel" id="panel-source">
+                    <div id="sourceContent" class="loading"><span class="spinner"></span> Loading source...</div>
+                </div>
+
+                <div class="tab-panel" id="panel-backlinks">
+                    <h3 style="margin-bottom:12px;color:var(--text-dim);font-size:13px;text-transform:uppercase;letter-spacing:0.5px">Entities that reference this</h3>
+                    <div id="backlinkList">
+                        ${facts.filter(f => f.subject_entity && f.subject_entity !== e.id).map(f => `
+                            <div class="backlink" onclick="loadEntity('${f.subject_entity}', '${(f.statement||'').split(' ')[0] || 'entity'}', 'entity')">
+                                <strong>${(f.statement||'').split(' ')[0] || 'Unknown'}</strong>
+                                <span style="color:var(--text-faint)"> → </span>
+                                <span style="color:var(--accent);font-family:var(--mono);font-size:11px">${(f.statement||'').split(' ')[1] || '—'}</span>
+                                <span style="color:var(--text-dim);font-size:12px;margin-left:8px">${(f.statement||'').split(' ').slice(2).join(' ')}</span>
+                            </div>
+                        `).join('') || '<div class="empty">No backlinks</div>'}
                     </div>
                 </div>
             `;
@@ -747,6 +767,41 @@
             evt.target.classList.add('active');
             document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
             document.getElementById('panel-' + tab).classList.add('active');
+            if (tab === 'source') loadSourceFile();
+        }
+
+        async function loadSourceFile() {
+            const panel = document.getElementById('sourceContent');
+            if (!currentEntity) {
+                panel.innerHTML = '<div class="empty">No entity selected</div>';
+                return;
+            }
+            panel.innerHTML = '<div class="loading"><span class="spinner"></span> Loading source...</div>';
+            try {
+                // Find episode_id from facts
+                const epId = allFacts.length > 0 ? (allFacts[0].episode_id || allFacts[0].source_episode) : null;
+                if (!epId) {
+                    panel.innerHTML = '<div class="empty">No source file linked to this entity</div>';
+                    return;
+                }
+                const data = await apiGet('/files/' + encodeURIComponent(epId));
+                panel.innerHTML = `
+                    <div style="margin-bottom:12px;display:flex;gap:12px;align-items:center">
+                        <span style="font-size:13px;color:var(--text-dim)">📄 Source file:</span>
+                        <code style="background:var(--bg);padding:4px 8px;border-radius:4px;font-size:12px">${data.source_file || 'inline content'}</code>
+                        <span style="font-size:11px;color:var(--text-faint)">${(data.size / 1024).toFixed(1)} KB</span>
+                    </div>
+                    <pre style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:16px;overflow-x:auto;font-size:12px;line-height:1.6;max-height:500px;overflow-y:auto;white-space:pre-wrap;font-family:var(--mono)">${escapeHtml(data.content || '')}</pre>
+                `;
+            } catch(e) {
+                panel.innerHTML = '<div class="empty">No source file found for this episode</div>';
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         // Init

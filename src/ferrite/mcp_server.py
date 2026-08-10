@@ -243,7 +243,8 @@ TOOLS = [
         name="ferrite_ingest",
         description=(
             "Ingest text content into the knowledge graph. "
-            "GLM-5.2 extracts entities and facts."
+            "GLM-5.2 extracts entities and facts. "
+            "Original content is saved to the file repository."
         ),
         inputSchema={
             "type": "object",
@@ -253,9 +254,21 @@ TOOLS = [
                     "description": "Text content to ingest",
                 },
                 "source": {
+                    "type": "object",
+                    "description": (
+                        "Source metadata. Supported keys: "
+                        "type (arxiv, web, code, text, voice), "
+                        "name (identifier), "
+                        "url (source URL), "
+                        "arxiv_id (e.g. 2401.12345), "
+                        "filename (override file name)"
+                    ),
+                    "default": {"type": "mcp", "name": "mcp"},
+                },
+                "content_type": {
                     "type": "string",
-                    "description": "Source identifier (default: 'mcp')",
-                    "default": "mcp",
+                    "description": "Content type: text, code, pdf, web, voice, json",
+                    "default": "text",
                 },
             },
             "required": ["content"],
@@ -474,8 +487,12 @@ def _handle_stats(args: dict) -> list[types.TextContent]:
 
 def _handle_ingest(args: dict) -> list[types.TextContent]:
     content = args["content"]
-    source = args.get("source", "mcp")
-    return _json_response(_ingest(content, source))
+    # Accept source as dict or string (backward compat)
+    source = args.get("source", {"type": "mcp", "name": "mcp"})
+    if isinstance(source, str):
+        source = {"type": "mcp", "name": source}
+    content_type = args.get("content_type", "text")
+    return _json_response(_ingest(content, source, content_type))
 
 
 def _handle_tempr_search(args: dict) -> list[types.TextContent]:
@@ -762,7 +779,7 @@ def _get_pipeline():
     return _pipeline
 
 
-def _ingest(content: str, source: str) -> dict:
+def _ingest(content: str, source: dict, content_type: str = "text") -> dict:
     """Ingest text content into the graph."""
     import uuid as _uuid
     from datetime import datetime
@@ -774,8 +791,8 @@ def _ingest(content: str, source: str) -> dict:
     ep = Episode(
         id=str(_uuid.uuid4()),
         content=content,
-        content_type="text",
-        source={"type": "mcp", "name": source},
+        content_type=content_type,
+        source=source,
         namespace="shared",
         recorded_at=datetime.now(),
     )
@@ -795,6 +812,7 @@ def _ingest(content: str, source: str) -> dict:
     return {
         "episode_id": ep.id,
         "facts_written": fact_count,
+        "source_file": ep.source_file,
     }
 
 
