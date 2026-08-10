@@ -1,7 +1,37 @@
-
-# sssf runtime
-adws/adw_data/sessions/
-adws/adw_data/sssf.db*
+# Environment
 .env
+.env.bak
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+/tmp/
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Docker
+docker volumes/
+
+# Runtime data / SSSF sessions
+adws/
+*.db
+backups/
+*.bak
+Caddyfile.bak

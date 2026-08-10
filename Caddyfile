@@ -4,9 +4,7 @@
 
 localhost:9443 {
     tls internal
-
     reverse_proxy localhost:8001
-
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
@@ -14,14 +12,5 @@ localhost:9443 {
         X-XSS-Protection "1; mode=block"
         Referrer-Policy "strict-origin-when-cross-origin"
     }
-
     encode gzip zstd
-
-    log {
-        output file /Users/fontes/ferrite/logs/caddy-access.log {
-            roll_size 100mb
-            roll_keep 10
-        }
-        format json
-    }
 }
