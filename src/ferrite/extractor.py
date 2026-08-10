@@ -181,4 +181,14 @@ def extract(content: str, llm_client: Optional[Callable] = None) -> dict:
         return {"entities": [], "facts": []}
 
     response_text = llm_client(EXTRACTION_SYSTEM_PROMPT, prompt)
-    return parse_extraction_response(response_text)
+
+    # Guard against None / empty responses from the LLM
+    if not response_text or not isinstance(response_text, str) or not response_text.strip():
+        logger.warning("LLM returned empty/None response; skipping extraction.")
+        return {"entities": [], "facts": []}
+
+    try:
+        return parse_extraction_response(response_text)
+    except (ValueError, json.JSONDecodeError, KeyError, TypeError) as e:
+        logger.warning(f"LLM response parse failed: {e}. Response: {response_text[:200]}")
+        return {"entities": [], "facts": []}
