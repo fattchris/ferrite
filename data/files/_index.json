@@ -1,0 +1,36 @@
+{
+  "fd8a0dff2e496a4b": {
+    "path": "text/fd8a0dff2e496a4b.txt",
+    "episode_ids": [
+      "81d50e57-0679-4e4e-9f2b-033faad3357c",
+      "a015c4ce-8289-4faa-9631-5b49a3424255",
+      "6f0b50f4-c6aa-4359-ac95-e882287c9c89",
+      "5ecd1ff9-429e-4eb6-894a-835030962a3b",
+      "2fb1a90c-70bb-40cd-b6b2-d7dbab00dd94"
+    ],
+    "content_type": "text",
+    "source": {
+      "test": "full_pipeline"
+    },
+    "size_bytes": 54,
+    "saved_at": "2026-08-10T07:52:23.721040"
+  },
+  "eb506f5fa7d10980": {
+    "path": "text/eb506f5fa7d10980.txt",
+    "episode_ids": [
+      "h-be2c3d5c-fbc1-b549-efa0-b0cc233e24df"
+    ],
+    "content_type": "conversation",
+    "source": {
+      "type": "hermes-sqlite",
+      "name": "migration",
+      "session_id": "20260608_215150_a0ca5683",
+      "session_source": "telegram",
+      "session_title": "First Chat Introduction With AI Assistant",
+      "profile": null,
+      "msg_range": "0-20"
+    },
+    "size_bytes": 8576,
+    "saved_at": "2026-08-10T09:05:50.406648"
+  }
+}

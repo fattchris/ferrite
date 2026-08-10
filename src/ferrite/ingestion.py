@@ -22,7 +22,7 @@ from datetime import datetime
 from typing import Callable, Optional
 
 import redis
-from .db import get_driver
+from .db import close_driver, get_driver
 from .canonicalize import resolve_entity
 from .extractor import extract, normalize_literal
 from .models import Episode, ExtractedEntity, ExtractedFact, ExtractionResult, FactBase
@@ -616,5 +616,5 @@ class IngestionPipeline:
 
     def close(self) -> None:
         """Close connections."""
-        self.driver.close()
+        close_driver()
         self.redis_client.close()

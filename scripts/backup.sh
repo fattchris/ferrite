@@ -34,6 +34,7 @@ docker compose -f "$COMPOSE_FILE" stop neo4j
 # 4. Neo4j admin database dump via --entrypoint
 #    --entrypoint bypasses the image's server-start default
 echo "[4/7] Dumping Neo4j database..."
+mkdir -p "${BACKUP_DIR}/dump-${DATE}"
 docker compose -f "$COMPOSE_FILE" run --rm --entrypoint neo4j-admin \
   -v "${BACKUP_DIR}:/backups" \
   neo4j database dump neo4j \
