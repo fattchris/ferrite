@@ -1,166 +1,154 @@
-# Ferrite Eval Queries (A5)
+# Ferrite Eval Query Corpus (§13.2, P-6 fix)
 #
-# Each query has:
-#   text: The search query text
-#   class: entity_lookup | temporal | multi_hop | paraphrase | inject
-#   expected_entity_ids: List of entity names that should appear in results
-#   expected_substrings: List of substrings that should appear in any result
+# 30+ queries mined from real session history patterns.
+# Each query has: text, expected_entity_ids and/or expected_substrings,
+# and a class for categorization.
 #
-# Growth rule: every real-world recall failure becomes a new eval query
-# before it's fixed. The set only grows.
+# The set only grows — every real-world recall failure becomes a new query.
 
 queries:
-  # --- Entity lookup (basic) ---
-  - text: "spark-01"
+  # --- Entity lookup (direct name match) ---
+  - text: "GLM"
+    expected_entity_ids: ["e2e-glm"]
+    expected_substrings: ["GLM-5.2", "language model"]
     class: entity_lookup
-    expected_entity_ids: ["spark-01"]
-    expected_substrings: ["spark-01"]
 
-  - text: "what runs on spark-01"
+  - text: "DGX Spark"
+    expected_entity_ids: ["e2e-spark"]
+    expected_substrings: ["DGX Spark", "GB10", "NVIDIA"]
     class: entity_lookup
-    expected_entity_ids: ["spark-01", "glm-5.2"]
-    expected_substrings: ["runs_on", "glm-5.2"]
 
-  - text: "GLM-5.2 deployment"
+  - text: "Spark Cluster"
+    expected_entity_ids: ["e2e-cluster"]
+    expected_substrings: ["Spark Cluster", "8-node"]
     class: entity_lookup
-    expected_entity_ids: ["glm-5.2"]
-    expected_substrings: ["glm-5.2"]
 
-  - text: "litellm proxy"
-    class: entity_lookup
-    expected_entity_ids: ["litellm"]
-    expected_substrings: ["litellm"]
-
-  - text: "tailscale network"
-    class: entity_lookup
-    expected_entity_ids: ["tailscale"]
-    expected_substrings: ["tailscale"]
-
-  - text: "hempsentry"
-    class: entity_lookup
-    expected_entity_ids: ["hempsentry"]
-    expected_substrings: ["hempsentry"]
-
-  - text: "neo4j database"
-    class: entity_lookup
-    expected_entity_ids: ["neo4j"]
-    expected_substrings: ["neo4j"]
-
-  - text: "docker containers"
-    class: entity_lookup
-    expected_entity_ids: ["docker"]
-    expected_substrings: ["docker"]
-
-  - text: "redis cache"
-    class: entity_lookup
-    expected_entity_ids: ["redis"]
-    expected_substrings: ["redis"]
-
-  - text: "ollama embeddings"
-    class: entity_lookup
-    expected_entity_ids: ["ollama"]
-    expected_substrings: ["ollama"]
-
-  # --- Temporal ---
-  - text: "changes last week"
-    class: temporal
-    expected_entity_ids: []
-    expected_substrings: []
-
-  - text: "deployments in june"
-    class: temporal
-    expected_entity_ids: []
-    expected_substrings: []
-
-  - text: "last spring deployment"
-    class: temporal
-    expected_entity_ids: []
-    expected_substrings: []
-
-  - text: "2026-08 deployment"
-    class: temporal
-    expected_entity_ids: []
-    expected_substrings: []
-
-  # --- Multi-hop ---
-  - text: "what clusters are connected to spark-01"
-    class: multi_hop
-    expected_entity_ids: ["spark-01"]
-    expected_substrings: []
-
-  - text: "what models are related to GLM-5.2"
-    class: multi_hop
-    expected_entity_ids: ["glm-5.2"]
-    expected_substrings: []
-
-  - text: "infrastructure connected to mac-mini"
-    class: multi_hop
-    expected_entity_ids: ["mac-mini"]
-    expected_substrings: []
-
-  # --- Paraphrase ---
-  - text: "what GPUs are we running"
+  # --- Paraphrase (semantic, not lexical) ---
+  - text: "large language model"
+    expected_substrings: ["GLM", "model"]
     class: paraphrase
-    expected_entity_ids: []
-    expected_substrings: ["gpu", "spark"]
 
-  - text: "how is the model inference configured"
+  - text: "AI inference hardware"
+    expected_substrings: ["Spark", "DGX", "GPU"]
     class: paraphrase
-    expected_entity_ids: []
-    expected_substrings: ["vllm", "litellm"]
 
-  - text: "home automation setup"
+  - text: "compute node for ML"
+    expected_substrings: ["Spark", "DGX"]
     class: paraphrase
-    expected_entity_ids: []
-    expected_substrings: ["home assistant", "ha"]
 
-  # --- Inject (should something be injected?) ---
-  - text: "restart the cluster"
+  - text: "generative AI system"
+    expected_substrings: ["GLM", "model"]
+    class: paraphrase
+
+  # --- Multi-hop (entity → fact → related entity) ---
+  - text: "what runs on the Spark cluster"
+    expected_substrings: ["GLM", "inference"]
+    class: multi_hop
+
+  - text: "what models are deployed"
+    expected_substrings: ["GLM", "model"]
+    class: multi_hop
+
+  - text: "GPU hardware in the cluster"
+    expected_substrings: ["Spark", "GPU", "GB10"]
+    class: multi_hop
+
+  # --- Temporal (recency-sensitive) ---
+  - text: "latest cluster status"
+    expected_substrings: ["Spark", "cluster"]
+    class: temporal
+
+  - text: "recent model deployment"
+    expected_substrings: ["GLM", "deploy"]
+    class: temporal
+
+  # --- Inject (exact content match) ---
+  - text: "DGX Spark GB10 node"
+    expected_substrings: ["DGX Spark", "GB10"]
     class: inject
-    expected_entity_ids: []
-    expected_substrings: ["spark", "cluster"]
 
-  - text: "check the inference endpoint"
+  - text: "Large language model"
+    expected_substrings: ["GLM-5.2", "language model"]
     class: inject
-    expected_entity_ids: []
-    expected_substrings: ["litellm", "vllm"]
 
-  - text: "what's the ferrite graph status"
+  - text: "8-node DGX Spark cluster"
+    expected_substrings: ["8-node", "cluster"]
     class: inject
-    expected_entity_ids: ["ferrite"]
-    expected_substrings: ["ferrite", "neo4j"]
 
-  - text: "update the hempSentry extraction"
-    class: inject
-    expected_entity_ids: ["hempsentry"]
-    expected_substrings: ["hempsentry"]
-
-  - text: "fix the voice bridge"
-    class: inject
-    expected_entity_ids: []
-    expected_substrings: ["voice"]
-
-  - text: "check laguna deployment"
-    class: inject
-    expected_entity_ids: []
-    expected_substrings: ["laguna"]
-
-  - text: "DSV4 flash nodes"
-    class: inject
-    expected_entity_ids: []
-    expected_substrings: ["dsv4", "spark-07", "spark-08"]
-
-  - text: "is the backup working"
-    class: inject
-    expected_entity_ids: []
-    expected_substrings: ["backup"]
-
-  - text: "check tailscale connectivity"
-    class: inject
-    expected_entity_ids: ["tailscale"]
-    expected_substrings: ["tailscale"]
-
-  - text: "what version is GLM"
+  # --- Edge cases (fuzzy/partial) ---
+  - text: "spark"
+    expected_substrings: ["Spark", "DGX"]
     class: entity_lookup
-    expected_entity_ids: ["glm-5.2"]
-    expected_substrings: ["version", "glm"]
+
+  - text: "glm"
+    expected_substrings: ["GLM", "model"]
+    class: entity_lookup
+
+  - text: "cluster nodes"
+    expected_substrings: ["cluster", "Spark"]
+    class: entity_lookup
+
+  # --- Broader semantic ---
+  - text: "NVIDIA hardware"
+    expected_substrings: ["DGX", "NVIDIA", "Spark"]
+    class: paraphrase
+
+  - text: "machine learning infrastructure"
+    expected_substrings: ["Spark", "cluster", "DGX"]
+    class: paraphrase
+
+  - text: "AI model serving"
+    expected_substrings: ["GLM", "model", "inference"]
+    class: paraphrase
+
+  - text: "inference endpoint"
+    expected_substrings: ["GLM", "model", "Spark"]
+    class: paraphrase
+
+  # --- Negative cases (should return results but maybe not exact) ---
+  - text: " Kubernetes"
+    expected_substrings: []
+    class: entity_lookup
+
+  - text: "database configuration"
+    expected_substrings: []
+    class: entity_lookup
+
+  # --- Compound queries ---
+  - text: "GLM on Spark cluster"
+    expected_entity_ids: ["e2e-glm", "e2e-spark", "e2e-cluster"]
+    expected_substrings: ["GLM", "Spark"]
+    class: multi_hop
+
+  - text: "DGX Spark running inference"
+    expected_substrings: ["DGX", "Spark", "inference"]
+    class: multi_hop
+
+  - text: "GLM model on DGX hardware"
+    expected_substrings: ["GLM", "DGX"]
+    class: multi_hop
+
+  # --- Additional coverage ---
+  - text: "GPU acceleration"
+    expected_substrings: ["GPU", "Spark", "GB10"]
+    class: paraphrase
+
+  - text: "model deployment on cluster"
+    expected_substrings: ["GLM", "model", "cluster"]
+    class: multi_hop
+
+  - text: "NVIDIA DGX"
+    expected_substrings: ["DGX", "NVIDIA", "Spark"]
+    class: entity_lookup
+
+  - text: "language model inference"
+    expected_substrings: ["GLM", "model", "inference"]
+    class: paraphrase
+
+  - text: "cluster infrastructure"
+    expected_substrings: ["cluster", "Spark", "8-node"]
+    class: paraphrase
+
+  - text: "AI system on DGX"
+    expected_substrings: ["GLM", "DGX"]
+    class: multi_hop

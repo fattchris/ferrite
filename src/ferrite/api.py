@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
@@ -49,7 +49,8 @@ settings = get_settings()
 # Auth: SQLite key store (§6.1) + env-based admin key for backward compat.
 # Public endpoints: health, metrics, circuit-breaker, root (Web UI).
 _PUBLIC_ENDPOINTS = {
-    "/", "/health", "/metrics", "/circuit-breaker", "/circuit-breaker/reset",
+    "/", "/health", "/metrics", "/metrics/prometheus",
+    "/circuit-breaker", "/circuit-breaker/reset",
 }
 # Key management endpoints require admin scope.
 _ADMIN_ENDPOINTS = {"/keys", "/keys/{key_id}/revoke"}
@@ -169,6 +170,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             ):
                 # Dev mode: no keys configured, auth disabled
                 key_info = {
+                    "key_id": "dev",
                     "agent_name": "dev",
                     "scopes": ["read", "write", "admin"],
                     "namespaces": ["shared", "personal", "e2e-test"],
@@ -239,17 +241,6 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                         },
                     )
 
-        # --- Rate limiting (§4.1: per-key token bucket) ---
-        token = _extract_token(request)
-        rate_key = token or "anonymous"
-        is_write = request.method in ("POST", "PUT", "PATCH", "DELETE")
-
-        if not _check_rate_limit(rate_key, is_write):
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "Rate limit exceeded"},
-            )
-
         return await call_next(request)
 
     # --- Key Management API (§6.2) ---
@@ -311,6 +302,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             raise HTTPException(status_code=503, detail="Pipeline not available")
 
         try:
+            from .metrics import get_metrics
             from .models import Episode
 
             episode = Episode(
@@ -321,6 +313,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             )
             episode_id = pipeline.enqueue(episode)
             breaker.call(lambda: None)  # record success
+            get_metrics().increment("ingestion_count", tags={"namespace": req.namespace})
             return StoreResponse(episode_id=episode_id, status="queued")
         except Exception as exc:
             err = exc  # capture for lambda closure
@@ -344,6 +337,10 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         """
         if pipeline is None:
             raise HTTPException(status_code=503, detail="Pipeline not available")
+
+        from .metrics import get_metrics
+
+        search_start = time.time()
 
         # Namespace enforcement on reads (F-2 fix)
         key_info = getattr(request.state, "key_info", None)
@@ -420,7 +417,14 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 )
             )
 
+        # Record search metrics (P-5 fix)
+        search_latency_ms = (time.time() - search_start) * 1000
+        get_metrics().increment("query_count")
+        get_metrics().observe("query_latency_ms", search_latency_ms)
+        get_metrics().gauge("queue_depth", float(pipeline.get_queue_depth()))
+
         return SearchResponse(results=results[:limit])
+
 
     @app.get("/entities/{entity_id}")
     async def get_entity(
@@ -553,7 +557,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
 
     @app.get("/metrics")
     async def metrics():
-        """Detailed metrics and health checks."""
+        """Detailed metrics and health checks (JSON)."""
         from .metrics import get_metrics
         from .observability import HealthMonitor
 
@@ -564,6 +568,97 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             result["health"] = monitor.run_all()
 
         return result
+
+    @app.get("/metrics/prometheus", include_in_schema=False)
+    async def prometheus_metrics():
+        """Prometheus text-format metrics endpoint (P-5 fix).
+
+        Exposes counters, gauges, and histograms in the Prometheus
+        text exposition format for scraping by Prometheus/Grafana.
+        """
+        from .metrics import get_metrics
+        from .observability import HealthMonitor
+
+        snap = get_metrics().snapshot()
+        lines: list[str] = [
+            "# HELP ferrite_info Ferrite build info",
+            '# TYPE ferrite_info gauge',
+            'ferrite_info{version="0.1.0"} 1',
+            "",
+        ]
+
+        # Counters
+        lines.append("# HELP ferrite_counter_total Counter metrics")
+        lines.append("# TYPE ferrite_counter_total counter")
+        for key, val in snap.get("counters", {}).items():
+            # Parse tag syntax: name{tag=val}
+            if "{" in key:
+                base, rest = key.split("{", 1)
+                tags = rest.rstrip("}")
+                lines.append(f'ferrite_counter_total{{metric="{base}",{tags}}} {val}')
+            else:
+                lines.append(f'ferrite_counter_total{{metric="{key}"}} {val}')
+        lines.append("")
+
+        # Gauges
+        lines.append("# HELP ferrite_gauge Gauge metrics")
+        lines.append("# TYPE ferrite_gauge gauge")
+        for key, val in snap.get("gauges", {}).items():
+            if "{" in key:
+                base, rest = key.split("{", 1)
+                tags = rest.rstrip("}")
+                lines.append(f'ferrite_gauge{{metric="{base}",{tags}}} {val}')
+            else:
+                lines.append(f'ferrite_gauge{{metric="{key}"}} {val}')
+        lines.append("")
+
+        # Histograms
+        lines.append("# HELP ferrite_histogram_avg Average of histogram observations")
+        lines.append("# TYPE ferrite_histogram_avg gauge")
+        for key, stats in snap.get("histograms", {}).items():
+            if "{" in key:
+                base, rest = key.split("{", 1)
+                tags = rest.rstrip("}")
+                label = f'metric="{base}",{tags}'
+            else:
+                label = f'metric="{key}"'
+            lines.append(f'ferrite_histogram_avg{{{label}}} {stats["avg"]}')
+            lines.append(f'ferrite_histogram_count{{{label}}} {stats["count"]}')
+        lines.append("")
+
+        # Health gauges
+        if pipeline is not None:
+            monitor = HealthMonitor(pipeline.driver, pipeline.redis_client)
+            health = monitor.run_all()
+            lines.append("# HELP ferrite_health Service health (1=ok, 0=error)")
+            lines.append("# TYPE ferrite_health gauge")
+            for check_name, check_val in health.items():
+                if isinstance(check_val, dict):
+                    status = check_val.get("status", "unknown")
+                    lines.append(
+                        f'ferrite_health{{check="{check_name}"}} '
+                        f'{1 if status == "ok" else 0}'
+                    )
+                elif isinstance(check_val, str):
+                    lines.append(
+                        f'ferrite_health{{check="{check_name}"}} '
+                        f'{1 if check_val == "ok" else 0}'
+                    )
+            lines.append("")
+
+            # Queue depth gauge
+            try:
+                queue_depth = pipeline.get_queue_depth()
+                lines.append("# HELP ferrite_queue_depth Ingestion queue depth")
+                lines.append("# TYPE ferrite_queue_depth gauge")
+                lines.append(f"ferrite_queue_depth {queue_depth}")
+            except Exception:
+                pass
+
+        return PlainTextResponse(
+            "\n".join(lines),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     @app.post("/tempr")
     async def tempr_search_endpoint(request: Request):

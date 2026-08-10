@@ -1,0 +1,56 @@
+# Caddyfile — TLS termination for Ferrite (P-1 fix)
+#
+# Caddy auto-provisions Let's Encrypt certs for real domains.
+# For local/Tailscale, use internal CA (self-signed, auto-trusted).
+#
+# Replace {$FERRITE_DOMAIN} with your domain or Tailscale hostname.
+
+# Production: real domain with auto-HTTPS
+{$FERRITE_DOMAIN:localhost} {
+    # Reverse proxy to Ferrite API
+    reverse_proxy ferrite-api:8001 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        
+        # Health check
+        health_uri /health
+        health_port 8001
+        health_interval 15s
+        health_timeout 5s
+    }
+    
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Cache-Control "no-store" {
+            /health /metrics
+        }
+    }
+    
+    # Rate limiting at edge (defense in depth)
+    # Caddy doesn't have built-in rate limiting, but we have
+    # Redis-based per-key limiting in the app (F-4 fix)
+    
+    # Compression
+    encode gzip zstd
+    
+    # Access logs
+    log {
+        output file /data/access.log {
+            roll_size 100mb
+            roll_keep 10
+        }
+        format json
+    }
+}
+
+# Optional: Tailscale/HTTPS via internal CA (uncomment for local)
+# https://ferrite.tail-xxx.ts.net {
+#     tls internal
+#     reverse_proxy ferrite-api:8001
+# }

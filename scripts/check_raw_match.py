@@ -35,7 +35,6 @@ Exit codes:
     1 — new violations found (raw MATCH in non-allowlisted file)
 """
 
-import os
 import re
 import sys
 from pathlib import Path
@@ -133,7 +132,7 @@ def main():
         print("=" * 60)
 
     if new_violations:
-        print(f"\n❌ NEW VIOLATIONS (raw MATCH in non-allowlisted files):")
+        print("\n❌ NEW VIOLATIONS (raw MATCH in non-allowlisted files):")
         for fname, viols in new_violations.items():
             print(f"\n  {fname}:")
             for v in viols:
@@ -148,7 +147,7 @@ def main():
         total_new = sum(len(v) for v in new_violations.values())
         total_debt = sum(len(v) for v in allowlisted_violations.values())
         total_exempt = len(EXEMPT_FILES)
-        print(f"\nSummary:")
+        print("\nSummary:")
         print(f"  Exempt files (query builder/DDL): {total_exempt}")
         print(f"  Allowlisted files (tech debt):   {len(allowlisted_violations)}")
         print(f"  New violations:                  {total_new}")
@@ -156,8 +155,8 @@ def main():
 
     if new_violations:
         print(f"\n❌ FAIL: {sum(len(v) for v in new_violations.values())} new violations found.")
-        print(f"   Raw MATCH strings are banned in handler code (§6.3).")
-        print(f"   Route Cypher through src/ferrite/query.py instead.")
+        print("   Raw MATCH strings are banned in handler code (§6.3).")
+        print("   Route Cypher through src/ferrite/query.py instead.")
         return 1
 
     if not report_mode:

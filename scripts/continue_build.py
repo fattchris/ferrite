@@ -22,16 +22,14 @@ Exit codes:
 """
 
 import json
-import os
 import subprocess
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
 # Make audit_build importable
 sys.path.insert(0, str(Path(__file__).parent))
-from audit_build import run_audit, GAPS
+from audit_build import GAPS, run_audit
 
 FERRITE_ROOT = Path.home() / "ferrite"
 BUILD_STATE = FERRITE_ROOT / "BUILD_STATE.json"
@@ -145,7 +143,7 @@ def verify_gap(gap_id: str) -> bool:
 
 
 def main():
-    print(f" Ferrite Build Continuation Engine")
+    print(" Ferrite Build Continuation Engine")
     print(f"   {datetime.now().isoformat()}")
     print()
 
@@ -178,7 +176,7 @@ def main():
 
     # 2. If no open gaps, run tests
     if not open_gaps:
-        print(f"\n✅ All spec gaps resolved! Running tests...")
+        print("\n✅ All spec gaps resolved! Running tests...")
         test_results = run_tests()
         state["test_state"] = {
             "last_run": datetime.now().isoformat(),
@@ -188,7 +186,7 @@ def main():
 
         if test_results["status"] == "pass":
             print(f"✅ Tests: {test_results['passed']} passed, {test_results['failed']} failed, {test_results.get('skipped', 0)} skipped")
-            print(f"\n🎉 BUILD COMPLETE — all gaps resolved, all tests pass")
+            print("\n🎉 BUILD COMPLETE — all gaps resolved, all tests pass")
             write_report({
                 "timestamp": datetime.now().isoformat(),
                 "action": "build_complete",
@@ -200,7 +198,7 @@ def main():
             print(f"❌ Tests: {test_results.get('passed', 0)} passed, {test_results.get('failed', 0)} failed")
             if test_results.get("failing_tests"):
                 print(f"   Failing: {', '.join(test_results['failing_tests'][:5])}")
-            print(f"\n⚠️  All gaps resolved but tests failing — need to fix test failures")
+            print("\n⚠️  All gaps resolved but tests failing — need to fix test failures")
             write_report({
                 "timestamp": datetime.now().isoformat(),
                 "action": "tests_failing",

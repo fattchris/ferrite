@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from audit_build import run_audit, GAPS
+from audit_build import run_audit
 
 FERRITE_ROOT = Path.home() / "ferrite"
 BUILD_STATE = FERRITE_ROOT / "BUILD_STATE.json"
