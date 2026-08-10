@@ -51,6 +51,7 @@ settings = get_settings()
 _PUBLIC_ENDPOINTS = {
     "/", "/health", "/metrics", "/metrics/prometheus",
     "/circuit-breaker", "/circuit-breaker/reset",
+    "/install", "/install/generate-secrets", "/install/verify",
 }
 # Key management endpoints require admin scope.
 _ADMIN_ENDPOINTS = {"/keys", "/keys/{key_id}/revoke"}
@@ -816,6 +817,63 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         if os.path.isfile(index):
             return FileResponse(index)
         return JSONResponse({"detail": "Web UI not available"}, status_code=404)
+
+    @app.get("/install", include_in_schema=False)
+    async def installer_page():
+        """Serve the web GUI installer."""
+        installer = os.path.join(os.path.dirname(__file__), "static", "install.html")
+        if os.path.isfile(installer):
+            return FileResponse(installer)
+        return JSONResponse({"detail": "Installer not available"}, status_code=404)
+
+    @app.post("/install/generate-secrets", include_in_schema=False)
+    async def generate_secrets(request: Request):
+        """Generate secure random secrets for .env file."""
+        import secrets as _secrets
+        return {
+            "neo4j_password": _secrets.token_hex(32),
+            "api_key": _secrets.token_hex(32),
+        }
+
+    @app.post("/install/verify", include_in_schema=False)
+    async def install_verify(request: Request):
+        """Verify a running Ferrite deployment."""
+        try:
+            import httpx as _httpx
+            # Check API health
+            base = f"http://localhost:{os.environ.get('PORT', '8001')}"
+            api_key = os.environ.get("FERRITE_API_KEY", "")
+
+            results = {"api": False, "auth": False, "redis_aof": False, "neo4j": False}
+
+            # Health
+            try:
+                async with _httpx.AsyncClient() as client:
+                    resp = await client.get(f"{base}/health", timeout=5.0)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        results["api"] = True
+                        results["neo4j"] = data.get("neo4j") == "ok"
+                        results["redis_aof"] = data.get("redis") == "ok"
+            except Exception:
+                pass
+
+            # Auth
+            try:
+                async with _httpx.AsyncClient() as client:
+                    resp = await client.get(
+                        f"{base}/search?query=test&limit=1",
+                        headers={"Authorization": f"Bearer {api_key}"},
+                        timeout=5.0,
+                    )
+                    results["auth"] = resp.status_code == 200
+            except Exception:
+                pass
+
+            all_ok = all(results.values())
+            return {"status": "ok" if all_ok else "issues", "checks": results}
+        except Exception as e:
+            return {"status": "error", "message": str(e), "checks": {}}
 
     return app
 

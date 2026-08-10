@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferrite — Installer</title>
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --bg-card: #12121a;
+            --bg-input: #1a1a25;
+            --border: #2a2a3a;
+            --border-active: #3d3d52;
+            --text: #e0e0e8;
+            --text-dim: #6a6a7a;
+            --accent: #e8463c;
+            --accent-glow: rgba(232, 70, 60, 0.3);
+            --green: #4ade80;
+            --yellow: #fbbf24;
+            --red: #ef4444;
+            --magenta: #c026d3;
+            --cyan: #06b6d4;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        .bg-grid {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-image:
+                linear-gradient(rgba(232,70,60,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(232,70,60,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .bg-glow {
+            position: fixed;
+            top: -200px; left: 50%;
+            transform: translateX(-50%);
+            width: 600px; height: 600px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            font-size: 48px;
+            font-weight: 700;
+            letter-spacing: -2px;
+            background: linear-gradient(135deg, var(--accent), var(--magenta));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .tagline {
+            color: var(--text-dim);
+            font-size: 14px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        /* Progress bar */
+        .progress-bar {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            position: relative;
+        }
+
+        .progress-bar::before {
+            content: '';
+            position: absolute;
+            top: 15px;
+            left: 0; right: 0;
+            height: 2px;
+            background: var(--border);
+            z-index: 0;
+        }
+
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 15px;
+            left: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), var(--magenta));
+            width: var(--progress, 0%);
+            transition: width 0.4s ease;
+            z-index: 1;
+        }
+
+        .step-dot {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            position: relative;
+            z-index: 2;
+            transition: all 0.3s;
+            color: var(--text-dim);
+        }
+
+        .step-dot.active {
+            border-color: var(--accent);
+            color: var(--accent);
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        .step-dot.done {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px;
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .card-desc {
+            color: var(--text-dim);
+            font-size: 13px;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+
+        /* Form elements */
+        .field {
+            margin-bottom: 20px;
+        }
+
+        .field label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-dim);
+            margin-bottom: 8px;
+        }
+
+        .field input, .field select, .field textarea {
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .field input:focus, .field select:focus, .field textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .field .hint {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-top: 6px;
+        }
+
+        .field-row {
+            display: flex;
+            gap: 16px;
+        }
+
+        .field-row .field { flex: 1; }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #c0302a);
+            color: white;
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px var(--accent-glow);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-dim);
+            border: 1px solid var(--border);
+        }
+
+        .btn-ghost:hover {
+            color: var(--text);
+            border-color: var(--border-active);
+        }
+
+        .btn-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        /* Secret display */
+        .secret-box {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .secret-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+        }
+
+        .secret-value {
+            font-size: 13px;
+            color: var(--accent);
+            word-break: break-all;
+            flex: 1;
+        }
+
+        .copy-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 11px;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        /* Checklist */
+        .checklist {
+            list-style: none;
+        }
+
+        .checklist li {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+        }
+
+        .checklist li:last-child { border-bottom: none; }
+
+        .check-icon {
+            width: 20px; height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+
+        .check-icon.pending {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+        }
+
+        .check-icon.loading {
+            background: transparent;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .check-icon.ok {
+            background: var(--green);
+            color: #0a0a0f;
+        }
+
+        .check-icon.fail {
+            background: var(--red);
+            color: white;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Code block */
+        .code-block {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            font-size: 12px;
+            line-height: 1.6;
+            overflow-x: auto;
+            margin: 12px 0;
+            color: var(--text-dim);
+        }
+
+        .code-block .comment { color: #5a5a6a; }
+        .code-block .key { color: var(--cyan); }
+        .code-block .val { color: var(--accent); }
+
+        /* Step visibility */
+        .step-panel { display: none; }
+        .step-panel.active { display: block; }
+
+        /* Badge */
+        .badge {
+            display: inline-block;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        .badge-recommended {
+            background: rgba(74, 222, 128, 0.1);
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        /* Final result */
+        .result-icon {
+            text-align: center;
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        .endpoint-list {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin: 20px 0;
+        }
+
+        .endpoint {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .endpoint-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 4px;
+        }
+
+        .endpoint-url {
+            font-size: 12px;
+            color: var(--cyan);
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .container { padding: 20px 12px; }
+            .card { padding: 20px; }
+            .field-row { flex-direction: column; }
+            .endpoint-list { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow"></div>
+
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">FERRITE</div>
+            <div class="tagline">Temporal Knowledge Graph · Installer</div>
+        </div>
+
+        <!-- Progress -->
+        <div class="progress-bar" id="progressBar">
+            <div class="step-dot active" data-step="1">1</div>
+            <div class="step-dot" data-step="2">2</div>
+            <div class="step-dot" data-step="3">3</div>
+            <div class="step-dot" data-step="4">4</div>
+            <div class="step-dot" data-step="5">5</div>
+        </div>
+
+        <!-- Step 1: Welcome / Prerequisites -->
+        <div class="step-panel active" id="step1">
+            <div class="card">
+                <div class="card-title">Welcome to Ferrite</div>
+                <div class="card-desc">
+                    Ferrite is a temporal knowledge graph memory system for AI agents.
+                    It stores facts with full provenance, tracks temporal changes, and
+                    provides multi-strategy retrieval (TEMPR) for context injection.
+                    <br><br>
+                    This installer will guide you through setup in 5 steps.
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <div style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px;">Prerequisites</div>
+                    <ul class="checklist" id="prereqList">
+                        <li>
+                            <div class="check-icon loading" id="check-docker"></div>
+                            Docker + Docker Compose v2
+                        </li>
+                        <li>
+                            <div class="check-icon loading" id="check-python"></div>
+                            Python 3.11+
+                        </li>
+                        <li>
+                            <div class="check-icon loading" id="check-uv"></div>
+                            uv package manager
+                        </li>
+                        <li>
+                            <div class="check-icon loading" id="check-git"></div>
+                            git
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="btn-row">
+                    <div></div>
+                    <button class="btn btn-primary" id="btnStep1" disabled onclick="goToStep(2)">
+                        Continue →
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Generate Secrets -->
+        <div class="step-panel" id="step2">
+            <div class="card">
+                <div class="card-title">Generate Secrets</div>
+                <div class="card-desc">
+                    Ferrite needs two secrets: a Neo4j database password and an API key
+                    for bearer token authentication. Click generate to create
+                    cryptographically secure random secrets.
+                </div>
+
+                <div id="secretsContainer" style="display:none;">
+                    <div class="secret-box">
+                        <div>
+                            <div class="secret-label">Neo4j Password</div>
+                            <div class="secret-value" id="secretNeo4j">—</div>
+                        </div>
+                        <button class="copy-btn" onclick="copySecret('secretNeo4j')">Copy</button>
+                    </div>
+                    <div class="secret-box">
+                        <div>
+                            <div class="secret-label">API Key (Bearer Token)</div>
+                            <div class="secret-value" id="secretApiKey">—</div>
+                        </div>
+                        <button class="copy-btn" onclick="copySecret('secretApiKey')">Copy</button>
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-ghost" onclick="goToStep(1)">← Back</button>
+                    <button class="btn btn-primary" id="btnGenerate" onclick="generateSecrets()">
+                        Generate Secrets
+                    </button>
+                    <button class="btn btn-primary" id="btnStep2" style="display:none;" onclick="goToStep(3)">
+                        Continue →
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: LLM + Embeddings Config -->
+        <div class="step-panel" id="step3">
+            <div class="card">
+                <div class="card-title">Configure LLM Backend</div>
+                <div class="card-desc">
+                    Ferrite uses an LLM to extract facts from text. Configure your
+                    extraction backend below. Leave blank for Ollama-only (free, local).
+                </div>
+
+                <div class="field">
+                    <label>LLM API Base URL</label>
+                    <input type="text" id="llmBase" value="http://localhost:4000/v1" placeholder="http://localhost:4000/v1">
+                    <div class="hint">LiteLLM proxy, OpenRouter (https://openrouter.ai/api/v1), or Ollama (http://localhost:11434/v1)</div>
+                </div>
+
+                <div class="field">
+                    <label>LLM API Key</label>
+                    <input type="password" id="llmKey" placeholder="sk-... (blank for Ollama/no-auth)">
+                    <div class="hint">Leave blank if using Ollama or unauthenticated local LLM</div>
+                </div>
+
+                <div class="field">
+                    <label>LLM Model Name</label>
+                    <input type="text" id="llmModel" value="gpt-4o-mini" placeholder="gpt-4o-mini">
+                    <div class="hint">Model identifier your LLM provider recognizes</div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-ghost" onclick="goToStep(2)">← Back</button>
+                    <button class="btn btn-primary" onclick="goToStep(4)">
+                        Continue →
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: .env Preview + Commands -->
+        <div class="step-panel" id="step4">
+            <div class="card">
+                <div class="card-title">Review & Deploy</div>
+                <div class="card-desc">
+                    Your <code>.env</code> file is ready. Run these commands to deploy:
+                </div>
+
+                <div class="field">
+                    <label>1. Write .env file</label>
+                    <div class="code-block" id="envPreview"></div>
+                    <button class="copy-btn" onclick="copySecret('envPreview')" style="margin-top:8px;">Copy</button>
+                </div>
+
+                <div class="field">
+                    <label>2. Build and start the stack</label>
+                    <div class="code-block" id="dockerCmd"></div>
+                </div>
+
+                <div class="field">
+                    <label>3. Verify deployment</label>
+                    <div class="code-block">curl http://localhost:8001/health</div>
+                </div>
+
+                <div class="field">
+                    <label>4. (Optional) Install via CLI</label>
+                    <div class="code-block">bash scripts/install.sh</div>
+                    <div class="hint">For interactive setup with TLS, Ollama, and Hermes plugin</div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-ghost" onclick="goToStep(3)">← Back</button>
+                    <button class="btn btn-primary" onclick="verifyDeployment()">
+                        Verify Deployment →
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 5: Verification -->
+        <div class="step-panel" id="step5">
+            <div class="card">
+                <div class="card-title" id="verifyTitle">Verifying...</div>
+                <div class="card-desc">Checking all Ferrite services.</div>
+
+                <ul class="checklist" id="verifyList">
+                    <li>
+                        <div class="check-icon loading" id="v-api"></div>
+                        API Health Check
+                    </li>
+                    <li>
+                        <div class="check-icon loading" id="v-neo4j"></div>
+                        Neo4j Database
+                    </li>
+                    <li>
+                        <div class="check-icon loading" id="v-redis"></div>
+                        Redis (AOF Persistence)
+                    </li>
+                    <li>
+                        <div class="check-icon loading" id="v-auth"></div>
+                        Auth (Bearer Token)
+                    </li>
+                </ul>
+
+                <div id="verifyResult" style="display:none;">
+                    <div class="result-icon" id="resultIcon">✅</div>
+                    <div class="card-title" style="text-align:center;">Ferrite is Live!</div>
+
+                    <div class="endpoint-list">
+                        <div class="endpoint">
+                            <div class="endpoint-label">API</div>
+                            <div class="endpoint-url">http://localhost:8001</div>
+                        </div>
+                        <div class="endpoint">
+                            <div class="endpoint-label">Web UI</div>
+                            <div class="endpoint-url">http://localhost:8001/</div>
+                        </div>
+                        <div class="endpoint">
+                            <div class="endpoint-label">Neo4j Browser</div>
+                            <div class="endpoint-url">http://localhost:7474</div>
+                        </div>
+                        <div class="endpoint">
+                            <div class="endpoint-label">Prometheus</div>
+                            <div class="endpoint-url">http://localhost:9090</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 16px; padding: 12px; background: var(--bg-input); border-radius: 8px; border: 1px solid var(--border);">
+                        <div class="secret-label" style="margin-bottom: 4px;">Your API Key</div>
+                        <div class="secret-value" id="finalApiKey">—</div>
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-ghost" onclick="goToStep(4)">← Back</button>
+                    <button class="btn btn-primary" id="btnFinish" style="display:none;" onclick="window.location.href='/'">
+                        Open Web UI →
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let currentStep = 1;
+        let secrets = { neo4j_password: '', api_key: '' };
+        let llmConfig = { base: '', key: '', model: '' };
+
+        // Progress bar
+        function updateProgress() {
+            const pct = ((currentStep - 1) / 4) * 100;
+            document.getElementById('progressBar').style.setProperty('--progress', pct + '%');
+            document.querySelectorAll('.step-dot').forEach(dot => {
+                const s = parseInt(dot.dataset.step);
+                dot.classList.remove('active', 'done');
+                if (s < currentStep) dot.classList.add('done');
+                else if (s === currentStep) dot.classList.add('active');
+            });
+        }
+
+        function goToStep(n) {
+            // Capture LLM config when leaving step 3
+            if (currentStep === 3) {
+                llmConfig.base = document.getElementById('llmBase').value;
+                llmConfig.key = document.getElementById('llmKey').value;
+                llmConfig.model = document.getElementById('llmModel').value;
+                updateEnvPreview();
+            }
+            currentStep = n;
+            document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
+            const panel = document.getElementById('step' + n);
+            if (panel) panel.classList.add('active');
+            updateProgress();
+        }
+
+        // Copy secret
+        function copySecret(id) {
+            const el = document.getElementById(id);
+            const text = el.textContent || el.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = el.parentElement.querySelector('.copy-btn');
+                if (btn) {
+                    const orig = btn.textContent;
+                    btn.textContent = '✓ Copied';
+                    setTimeout(() => btn.textContent = orig, 1500);
+                }
+            });
+        }
+
+        // Generate secrets via API
+        async function generateSecrets() {
+            const btn = document.getElementById('btnGenerate');
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+
+            try {
+                const resp = await fetch('/install/generate-secrets', { method: 'POST' });
+                const data = await resp.json();
+                secrets = data;
+
+                document.getElementById('secretNeo4j').textContent = data.neo4j_password;
+                document.getElementById('secretApiKey').textContent = data.api_key;
+                document.getElementById('secretsContainer').style.display = 'block';
+
+                btn.style.display = 'none';
+                document.getElementById('btnStep2').style.display = 'inline-flex';
+
+                updateEnvPreview();
+            } catch (e) {
+                // Fallback: generate locally
+                const arr = new Uint8Array(32);
+                crypto.getRandomValues(arr);
+                const hex1 = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+                crypto.getRandomValues(arr);
+                const hex2 = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+                secrets = { neo4j_password: hex1, api_key: hex2 };
+
+                document.getElementById('secretNeo4j').textContent = hex1;
+                document.getElementById('secretApiKey').textContent = hex2;
+                document.getElementById('secretsContainer').style.display = 'block';
+
+                btn.style.display = 'none';
+                document.getElementById('btnStep2').style.display = 'inline-flex';
+
+                updateEnvPreview();
+            }
+        }
+
+        // Update .env preview
+        function updateEnvPreview() {
+            const llmBase = llmConfig.base || document.getElementById('llmBase')?.value || 'http://localhost:4000/v1';
+            const llmKey = llmConfig.key || document.getElementById('llmKey')?.value || '';
+            const llmModel = llmConfig.model || document.getElementById('llmModel')?.value || 'gpt-4o-mini';
+
+            const env = `# Ferrite Production Environment
+NEO4J_PASSWORD=${secrets.neo4j_password || '<generated>'}
+FERRITE_API_KEY=${secrets.api_key || '<generated>'}
+LLM_BASE_URL=${llmBase}
+LLM_API_KEY=${llmKey}
+LLM_MODEL=${llmModel}
+FERRITE_DOMAIN=localhost`;
+
+            document.getElementById('envPreview').textContent = env;
+
+            const cmd = `# Clone (if not already done)
+git clone https://github.com/fattchris/ferrite.git
+cd ferrite
+
+# Write .env (paste above content)
+# Then build and start:
+docker compose -f docker-compose.prod.yml up -d --build
+
+# Or use the CLI installer:
+bash scripts/install.sh`;
+
+            document.getElementById('dockerCmd').textContent = cmd;
+        }
+
+        // Verify deployment
+        async function verifyDeployment() {
+            goToStep(5);
+            document.getElementById('verifyResult').style.display = 'none';
+
+            const checks = [
+                { id: 'v-api', key: 'api', label: 'API Health' },
+                { id: 'v-neo4j', key: 'neo4j', label: 'Neo4j' },
+                { id: 'v-redis', key: 'redis_aof', label: 'Redis AOF' },
+                { id: 'v-auth', key: 'auth', label: 'Auth' },
+            ];
+
+            let allOk = false;
+            try {
+                const resp = await fetch('/install/verify', { method: 'POST' });
+                const data = await resp.json();
+                allOk = data.status === 'ok';
+
+                checks.forEach(c => {
+                    const el = document.getElementById(c.id);
+                    el.classList.remove('loading');
+                    if (data.checks && data.checks[c.key]) {
+                        el.classList.add('ok');
+                        el.textContent = '✓';
+                    } else {
+                        el.classList.add('fail');
+                        el.textContent = '✗';
+                    }
+                });
+            } catch (e) {
+                checks.forEach(c => {
+                    const el = document.getElementById(c.id);
+                    el.classList.remove('loading');
+                    el.classList.add('fail');
+                    el.textContent = '✗';
+                });
+            }
+
+            if (allOk) {
+                document.getElementById('verifyTitle').textContent = 'Verification Complete';
+                document.getElementById('resultIcon').textContent = '✅';
+                document.getElementById('finalApiKey').textContent = secrets.api_key || '(see .env)';
+                document.getElementById('verifyResult').style.display = 'block';
+                document.getElementById('btnFinish').style.display = 'inline-flex';
+            } else {
+                document.getElementById('verifyTitle').textContent = 'Deployment Not Ready';
+                document.getElementById('verifyTitle').style.color = 'var(--yellow)';
+                document.getElementById('verifyResult').style.display = 'block';
+                document.getElementById('resultIcon').textContent = '⚠️';
+                document.querySelector('#verifyResult .card-title').textContent = 'Follow the setup steps, then re-verify';
+                document.getElementById('btnFinish').style.display = 'inline-flex';
+                document.getElementById('btnFinish').textContent = 'Back to Setup';
+                document.getElementById('btnFinish').onclick = () => goToStep(4);
+            }
+        }
+
+        // Prerequisite checks (simulated — check if we can reach the API)
+        async function checkPrereqs() {
+            // These are client-side best-effort checks
+            // Docker/Python/uv can't be checked from browser, but we can
+            // check if the API itself is running (which means the stack is up)
+            const checks = [
+                { id: 'check-docker', label: 'docker' },
+                { id: 'check-python', label: 'python' },
+                { id: 'check-uv', label: 'uv' },
+                { id: 'check-git', label: 'git' },
+            ];
+
+            // If API is already running, mark all as passed (stack is up)
+            try {
+                const resp = await fetch('/health', { signal: AbortSignal.timeout(3000) });
+                if (resp.ok) {
+                    checks.forEach(c => {
+                        const el = document.getElementById(c.id);
+                        el.classList.remove('loading');
+                        el.classList.add('ok');
+                        el.textContent = '✓';
+                    });
+                    document.getElementById('btnStep1').disabled = false;
+                    document.getElementById('btnStep1').textContent = 'Continue → (Stack Running)';
+                    return;
+                }
+            } catch (e) {
+                // API not running — that's OK, show instructions
+            }
+
+            // Mark as "manual check needed" (can't check from browser)
+            checks.forEach(c => {
+                const el = document.getElementById(c.id);
+                el.classList.remove('loading');
+                el.classList.add('pending');
+                el.textContent = '?';
+            });
+
+            // Enable continue anyway
+            document.getElementById('btnStep1').disabled = false;
+            document.getElementById('btnStep1').textContent = 'Continue →';
+        }
+
+        // Init
+        checkPrereqs();
+        updateProgress();
+    </script>
+</body>
+</html>

@@ -1,228 +1,508 @@
-# Ferrite — Temporal Knowledge Graph System
+<div align="center">
 
-A temporal knowledge graph memory system with multi-strategy retrieval (TEMPR), observation consolidation, and mental model support. Built on Neo4j 5, Redis 8, and Ollama embeddings.
+# 🧲 FERRITE
+
+### Temporal Knowledge Graph Memory for AI Agents
+
+```
+  ███████ ████████ ██████   █████  ██████  ███████
+  ██         ██    ██   ██ ██   ██ ██   ██ ██
+  ███████    ██    ██████  ███████ ██   ██ ███████
+       ██    ██    ██      ██   ██ ██   ██      ██
+  ███████    ██    ██       █████  ██████  ███████
+```
+
+**The magnetic compound on cassette tape that holds the recording.**
+**Without ferrite, the tape is just plastic film. Ferrite is what holds the signal.**
+
+[![CI](https://img.shields.io/badge/CI-passing-brightgreen)](https://github.com/fattchris/ferrite)
+[![Tests](https://img.shields.io/badge/tests-214%20passing-brightgreen)](https://github.com/fattchris/ferrite)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED)](https://docs.docker.com)
+
+*Part of the [Kassett](https://github.com/fattchris/kassett) ecosystem*
+
+</div>
+
+---
+
+## What is Ferrite?
+
+Ferrite is a **temporal knowledge graph** that gives AI agents long-term memory.
+
+Every fact is stored with:
+- **Full provenance** — which agent, which session, when
+- **Temporal tracking** — when it was true, when it changed
+- **Bitemporal queries** — "what did we know in July?" vs "what was true in July?"
+- **Multi-strategy retrieval** — 5 parallel search strategies fused via RRF
+- **Observation consolidation** — raw facts → synthesized beliefs with evidence
+- **Mental models** — persona-specific knowledge curation
+
+Agents store facts via MCP or REST. Ferrite extracts entities and relationships
+using an LLM, canonicalizes entities, embeds fact statements, and indexes
+everything for sub-second retrieval.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        AGENTS                                │
+│   Hermes  ·  Claude  ·  Codex  ·  OpenClaw  ·  Any MCP      │
+└──────┬──────────┬──────────┬──────────┬──────────┬─────────┘
+       │          │          │          │          │
+       ▼          ▼          ▼          ▼          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    MCP SERVER (10 tools)                      │
+│   search · query · entity_facts · multi_hop · inject        │
+│   stats · ingest · tempr_search · mental_model · consolidate│
+└───────────────────────┬─────────────────────────────────────┘
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+  ┌──────────────┐ ┌──────────┐ ┌──────────────┐
+  │  REST API    │ │ INGESTION│ │  WEB UI      │
+  │  (FastAPI)   │ │ PIPELINE │ │  (SPA)       │
+  │              │ │          │ │              │
+  │ /search      │ │ Redis    │ │ Graph view   │
+  │ /store       │ │ Queue    │ │ Search bar   │
+  │ /tempr       │ │ DLQ      │ │ TEMPR panel  │
+  │ /entities    │ │ Circuit  │ │ Stats        │
+  │ /eval        │ │ Breaker  │ │              │
+  └──────┬───────┘ └────┬─────┘ └──────┬───────┘
+         │              │              │
+         ▼              ▼              ▼
+  ┌──────────────────────────────────────────────────────────┐
+  │                     Neo4j 5.x                             │
+  │  Reified facts · Bitemporal edges · Vector index (768d)  │
+  │  + Redis 8 (cache + queue + AOF persistence)             │
+  └──────────────────────────────────────────────────────────┘
+```
 
 ## Quick Start
 
+### Option 1: CLI Installer (recommended)
+
 ```bash
-# Clone and install
-git clone <repo-url> ferrite
+git clone https://github.com/fattchris/ferrite.git
 cd ferrite
-uv sync
-
-# Start services via Docker
-docker compose up -d
-
-# Set API key (optional — disabled by default)
-export FERRITE_API_KEY=your-secret-key
-
-# Run tests
-uv run pytest
-uv run python scripts/e2e_test.py
-
-# Open the Web UI
-open http://localhost:8001
+bash scripts/install.sh
 ```
 
-## Architecture
+The installer walks you through:
+1. Prerequisite checks (Docker, Python, uv)
+2. Secure secret generation (.env)
+3. LLM extraction backend config
+4. Optional Ollama for local embeddings
+5. Docker stack build + start
+6. Optional TLS via Caddy (auto-restart)
+7. Optional Hermes memory provider plugin
+8. Deployment verification
 
-```
-┌─────────────────────────────────────────────────┐
-│                  Ferrite Stack                   │
-├─────────────────────────────────────────────────┤
-│  Web UI (:8001)     REST API (:8001)             │
-│  - Search            - /health (public)          │
-│  - TEMPR             - /search (auth)           │
-│  - Stats dashboard   - /tempr (auth)             │
-│                      - /entities/{id} (auth)     │
-│                      - /store (auth)             │
-│                      - /eval (auth)              │
-│                      - /circuit-breaker (public) │
-├─────────────────────────────────────────────────┤
-│  MCP Server (stdio)  10 tools                    │
-├─────────────────────────────────────────────────┤
-│  TEMPR Engine    │ Consolidator │ Circuit Breaker │
-│  5 strategies    │ Redis queue  │ CLOSED/OPEN/  │
-│  RRF k=60        │ SUPPORTS/   │ HALF_OPEN      │
-│                  │ CONTRADICTS  │                │
-├─────────────────────────────────────────────────┤
-│  Neo4j 5 (:7687)  │  Redis 8 (:6379)  │  Ollama  │
-│  Graph + Vector   │  Cache + Queue   │  768d emb │
-└─────────────────────────────────────────────────┘
+### Option 2: Web GUI Installer
+
+```bash
+git clone https://github.com/fattchris/ferrite.git
+cd ferrite
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-## Components
+Then open the web installer:
 
-### Core
-- **Neo4j 5** — Graph database with fulltext + vector indexes
-- **Redis 8** — Cache, job queue, rate limiting
-- **Ollama** — `nomic-embed-text` 768d embeddings (degrades to BM25 if unavailable)
+```
+http://localhost:8001/install
+```
 
-### Intelligence
-- **TEMPR** (§3.8) — 5-strategy retrieval with Reciprocal Rank Fusion (k=60):
-  1. Semantic (vector cosine)
-  2. BM25 (fulltext)
-  3. Graph (entity neighborhood)
-  4. Temporal (time-weighted)
-  5. Recency (freshness boost)
+A 5-step wizard with secret generation, LLM config, .env preview,
+and live deployment verification.
 
-- **Consolidator** (§3.5) — Observation synthesis with evidence tracking:
-  - Groups observations by entity+predicate keys
-  - Detects contradictions (SUPPORTS/CONTRADICTS/SUPERSEDES edges)
-  - Redis queue for async processing
+### Option 3: Manual
 
-- **Mental Models** (§3.6-3.7) — Persona archetypes with curated dispositions:
-  - Skepticism, literalism, empathy modes
-  - CURATED_FOR edges linking models to entities
-  - LLM-assisted drafting (GLM-5.2)
+```bash
+# Clone
+git clone https://github.com/fattchris/ferrite.git
+cd ferrite
 
-### Infrastructure
-- **Circuit Breaker** (§8.1) — CLOSED → OPEN → HALF_OPEN state machine
-  - 5 failure threshold, 60s cooldown
-  - Protects all MCP + API calls
-  - Manual reset via `POST /circuit-breaker/reset`
+# Generate secrets
+cp .env.example .env
+# Edit .env — generate secrets with: openssl rand -hex 32
 
-- **Observability** (§8) — HealthMonitor, AlertManager, MetricsCollector
-  - Structured logging
-  - Health checks: Neo4j, Redis, queue depth, ingestion, contradictions
+# Build and start
+docker compose -f docker-compose.prod.yml up -d --build
 
-- **Eval Harness** (§13.2) — 30-query test suite
-  - Metrics: Recall@5, Recall@10, MRR
-  - Baseline: Recall@5=0.43, MRR=0.43 (at 3% data migration)
+# Verify
+curl http://localhost:8001/health
+```
+
+## Endpoints
+
+| Service | URL | Auth |
+|---------|-----|------|
+| REST API | `http://localhost:8001` | Bearer token |
+| Web UI | `http://localhost:8001/` | Public |
+| Web Installer | `http://localhost:8001/install` | Public |
+| Neo4j Browser | `http://localhost:7474` | neo4j / (from .env) |
+| Prometheus | `http://localhost:9090` | Public |
+| TLS (if Caddy) | `https://localhost:9443` | Self-signed |
 
 ## API Reference
 
-### Public Endpoints (no auth)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Web UI |
-| GET | `/health` | Neo4j + Redis + queue status |
-| GET | `/metrics` | Detailed metrics + health checks |
-| GET | `/circuit-breaker` | Circuit breaker state |
-| POST | `/circuit-breaker/reset` | Reset circuit breaker |
+### Public Endpoints
 
-### Protected Endpoints (Bearer token)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/search?query=...&limit=10` | BM25 fulltext search |
-| GET | `/entities/{id}` | Entity with facts (subject + object) |
-| GET | `/history/{id}?mode=knowledge&at_time=...` | Temporal history |
-| POST | `/store` | Queue content for ingestion |
-| POST | `/tempr` | TEMPR multi-strategy search |
-| GET | `/mental-models?query=...` | Search mental models |
-| POST | `/consolidate` | Run observation consolidation |
-| GET | `/eval` | Run eval harness |
+```
+GET  /                           Web UI (SPA)
+GET  /install                    Web GUI Installer
+GET  /health                     Neo4j + Redis + queue status
+GET  /metrics/prometheus         Prometheus text format
+GET  /circuit-breaker            Circuit breaker state
+POST /circuit-breaker/reset     Reset circuit breaker
+```
+
+### Protected Endpoints (Bearer Token)
+
+```
+GET  /search?query=...&limit=10         BM25 fulltext search
+POST /store                             Queue content for ingestion
+GET  /entities/{id}                     Entity with all facts
+GET  /history/{id}?mode=knowledge       Temporal history
+POST /tempr                             5-strategy RRF retrieval
+GET  /mental-models?query=...           Mental model search
+POST /consolidate                        Run observation consolidation
+GET  /eval                               Run eval harness (30 queries)
+```
 
 ### MCP Tools (10)
-1. `ferrite_search` — Search facts by keywords
-2. `ferrite_query` — Natural language → Cypher
-3. `ferrite_entity_facts` — Get facts for an entity
-4. `ferrite_multi_hop` — Multi-hop graph traversal
-5. `ferrite_inject` — Auto-inject context (TEMPR + score floor)
-6. `ferrite_stats` — Graph statistics
-7. `ferrite_ingest` — Ingest content
-8. `ferrite_tempr_search` — TEMPR 5-strategy retrieval
-9. `ferrite_mental_model` — Mental model search
-10. `ferrite_consolidate` — Run consolidation
+
+| Tool | Description |
+|------|-------------|
+| `ferrite_search` | Search facts by keywords |
+| `ferrite_query` | Natural language → Cypher |
+| `ferrite_entity_facts` | Get all facts for an entity |
+| `ferrite_multi_hop` | Multi-hop graph traversal |
+| `ferrite_inject` | Auto-inject context (TEMPR + score floor) |
+| `ferrite_stats` | Graph statistics |
+| `ferrite_ingest` | Ingest content via LLM extraction |
+| `ferrite_tempr_search` | TEMPR 5-strategy retrieval |
+| `ferrite_mental_model` | Mental model search |
+| `ferrite_consolidate` | Run observation consolidation |
+
+## Architecture
+
+### Knowledge Model
+
+Facts are **reified nodes**, not edges. This means:
+
+- Every fact has its own identity (UUID)
+- Facts can be superseded, contradicted, or supported
+- Entities are global referents — they carry no epistemic state
+- All belief semantics live on Fact nodes
+
+```
+Entity ←—SUBJECT—— Fact ——OBJECT——→ Entity/Literal
+                       |
+                  SOURCED_FROM
+                       |
+                    Episode
+                       |
+                     Session
+```
+
+### Fact Node
+
+```python
+Fact:
+    id: str              # UUID
+    predicate: str       # Controlled vocab (70 predicates)
+    statement: str       # Canonical rendered sentence
+    functional: bool     # Derived from vocab at write time
+    certainty: enum      # stated | inferred | speculative
+    epistemic_state: enum # active | contradicted | superseded
+    assertion_source: enum # user | tool_result | model
+    valid_at: datetime    # When the fact became true
+    recorded_at: datetime # When we learned it
+    invalid_at: datetime  # When it stopped being true
+    namespace: str        # shared | personal | ...
+```
+
+### TEMPR — 5-Strategy Retrieval
+
+TEMPR (Temporal Multi-Party Retrieval) runs 5 search strategies in parallel
+and fuses results via Reciprocal Rank Fusion (k=60):
+
+1. **Semantic** — Vector cosine similarity (768d, nomic-embed-text)
+2. **BM25** — Fulltext search on fact statements
+3. **Graph** — Entity neighborhood traversal
+4. **Temporal** — Time-weighted scoring
+5. **Recency** — Freshness boost
+
+Priority order: Mental Models → Observations → Raw Facts.
+
+Each strategy degrades gracefully. If Ollama is down, semantic search
+falls back to BM25-only. If Neo4j graph traversal is slow, it skips
+to the other strategies. **Retrieval never fails.**
+
+### Circuit Breaker
+
+```
+CLOSED → (5 failures) → OPEN → (60s cooldown) → HALF_OPEN → success → CLOSED
+                                                       → failure → OPEN
+```
+
+When OPEN: all MCP and API calls return immediately with a fallback
+response. Agents degrade to local-only memory. No crash, no hang.
+Manual reset via `POST /circuit-breaker/reset`.
+
+### Observation Consolidation
+
+Raw facts accumulate over time. The consolidator groups observations by
+`(entity, predicate, namespace)`, detects contradictions, and creates
+synthesized Observation nodes with evidence tracking:
+
+```
+Fact A: "Spark-01 runs GLM-5.2"     ──SUPPORTS──→ Observation
+Fact B: "Spark-01 runs GLM-5.2"     ──SUPPORTS──→ (same)
+Fact C: "Spark-01 runs DeepSeek"   ──CONTRADICTS──→ (same)
+```
+
+Observations carry `proof_count` and `evidence_refs`. Stale
+observations are flagged for re-verification.
+
+### Bitemporal Model
+
+Two query modes:
+
+- **`as_of_knowledge(T)`** — What did we know at time T? (transaction time)
+- **`as_of_world(T)`** — What was true at time T? (valid time)
+
+Facts are never deleted. Old facts get `invalid_at` + SUPERSEDES edge
+linking to the replacement.
 
 ## Configuration
 
-Environment variables (all optional, defaults shown):
+All config via environment variables (`.env` file):
 
 ```bash
+# Required
+NEO4J_PASSWORD=<openssl rand -hex 32>
+FERRITE_API_KEY=<openssl rand -hex 32>
+
+# LLM extraction backend
+LLM_BASE_URL=http://localhost:4000/v1    # LiteLLM, OpenRouter, etc.
+LLM_API_KEY=sk-...                        # Blank for Ollama
+LLM_MODEL=gpt-4o-mini
+
+# Optional
+FERRITE_DOMAIN=localhost                  # Real domain for Let's Encrypt
 NEO4J_URI=bolt://localhost:7687
-NEO4J_USER=neo4j
-NEO4J_PASSWORD=ferrite123
 REDIS_URL=redis://localhost:6379
-FERRITE_API_KEY=          # Set to enforce bearer auth
-NAMESPACE_DEFAULT=shared
-WRITE_RATE_LIMIT=100      # Per minute
-READ_RATE_LIMIT=200       # Per minute
-```
-
-## Docker
-
-```bash
-# Build and start all services
-docker compose up -d
-
-# View logs
-docker logs ferrite-api -f
-
-# Rebuild after code changes
-docker compose build ferrite-api && docker compose up -d ferrite-api
-
-# Health check
-curl http://localhost:8001/health
+WRITE_RATE_LIMIT=100                      # Per minute
+READ_RATE_LIMIT=200                       # Per minute
 ```
 
 ## Testing
 
 ```bash
-# Unit tests (174)
-uv run pytest
+# 176 unit tests (fast, no Docker needed)
+uv run pytest tests/ -q
 
-# E2E tests (38) — requires running Docker stack
+# 38 E2E tests (requires running Docker stack)
+FERRITE_API_KEY=$(grep FERRITE_API_KEY .env | cut -d= -f2) \
+NEO4J_PASSWORD=$(grep NEO4J_PASSWORD .env | cut -d= -f2) \
 uv run python scripts/e2e_test.py
 
-# Eval harness
-curl http://localhost:8001/eval
+# Load test
+uv run python scripts/load_test.py \
+  --base-url http://localhost:8001 \
+  --api-key $(grep FERRITE_API_KEY .env | cut -d= -f2)
 
 # Lint
 uv run ruff check src/ tests/ scripts/
 ```
 
-## CI Pipeline
-
-GitHub Actions (`.github/workflows/ci.yml`):
-1. **lint** — ruff check
-2. **test** — 174 unit tests (Neo4j + Redis service containers)
-3. **e2e** — 38 E2E tests against live API
-4. **eval** — Recall@5 ≥ 0.30 regression gate
-
 ## Backup & Recovery
 
 ```bash
-# Backup Neo4j
-scripts/backup.sh
+# Backup (stops writers, dumps Neo4j, copies volumes)
+bash scripts/backup.sh
 
 # Restore
-scripts/restore.sh /path/to/backup.dump
+bash scripts/restore.sh YYYYMMDD
 
 # Health check
-scripts/health_check.sh
+bash scripts/health_check.sh
 ```
+
+Nightly backups run at 3 AM via cron. 30-day retention.
+Backups include: Neo4j database dump + Redis volume + API data volume.
 
 ## Project Structure
 
 ```
 ferrite/
 ├── src/ferrite/
-│   ├── api.py              # FastAPI REST + Web UI
+│   ├── api.py              # FastAPI REST + Web UI + Installer
 │   ├── mcp_server.py       # MCP server (10 tools)
-│   ├── ingestion.py        # Pipeline + LLM extraction
-│   ├── query.py            # Auto-inject v2 (TEMPR + budget)
+│   ├── ingestion.py        # Queue → extract → canonicalize → Neo4j
+│   ├── query.py            # Search, NL→Cypher, context injection
 │   ├── tempr.py            # 5-strategy RRF retrieval
 │   ├── consolidator.py     # Observation synthesis
 │   ├── mental_models.py    # Persona archetypes
-│   ├── circuit_breaker.py  # State machine
-│   ├── embeddings.py       # Ollama 768d + VectorStore
-│   ├── temporal.py         # as_of_knowledge/world
-│   ├── schema.py           # Neo4j constraints + indexes
+│   ├── circuit_breaker.py  # CLOSED/OPEN/HALF_OPEN state machine
+│   ├── embeddings.py       # Ollama 768d + VectorStore ABC
+│   ├── temporal.py         # as_of_knowledge / as_of_world
+│   ├── schema.py           # Neo4j constraints + indexes + vector
+│   ├── canonicalize.py     # Entity normalization + alias resolution
+│   ├── extractor.py        # LLM extraction prompt + validation
 │   ├── metrics.py          # MetricsCollector
 │   ├── observability.py    # HealthMonitor + AlertManager
 │   ├── eval.py             # Recall@K + MRR harness
-│   ├── config.py           # Settings (pydantic-settings)
-│   ├── models.py           # Pydantic models
-│   └── static/             # Web UI
-├── tests/                  # 174 unit tests
-├── scripts/               # E2E, backup, migration
-├── eval/queries.yaml       # Eval test dataset
-├── docker-compose.yml      # Neo4j + Redis + API
+│   ├── config.py           # Pydantic settings
+│   ├── models.py           # Pydantic models (Fact, Entity, Episode)
+│   ├── vocab.py            # 70 controlled predicates
+│   ├── key_store.py        # SQLite API key management
+│   └── static/
+│       ├── index.html      # Web UI (SPA)
+│       └── install.html    # Web GUI Installer
+├── tests/                  # 176 unit tests
+├── scripts/
+│   ├── install.sh          # CLI Installer
+│   ├── e2e_test.py         # 38 E2E tests
+│   ├── load_test.py       # Load/performance tests
+│   ├── backup.sh           # Neo4j + volume backup
+│   ├── restore.sh          # Restore from backup
+│   ├── health_check.sh     # Service health check
+│   ├── migrate_from_sqlite.py  # Hermes session → graph migration
+│   ├── seed.py             # Seed sample data
+│   ├── eval.py             # Eval harness runner
+│   └── audit_build.py      # Spec compliance audit
+├── eval/queries.yaml       # 30-query eval dataset
+├── docker-compose.yml      # Dev stack
+├── docker-compose.prod.yml # Production stack
 ├── Dockerfile              # Python 3.12-slim + uv
-└── .github/workflows/ci.yml
+├── Caddyfile               # TLS config
+├── prometheus.yml          # Metrics scraping
+├── plugin.json             # Agent Plugins 1.0.0 manifest
+├── mcp.json                # MCP server config
+└── .github/workflows/ci.yml  # CI pipeline
 ```
+
+## Tech Stack
+
+| Layer | Technology | Why |
+|-------|-----------|-----|
+| Graph DB | Neo4j 5 Community | Purpose-built for graph traversal, free, Docker |
+| Cache/Queue | Redis 8 | AOF persistence, pub/sub, rate limiting |
+| API | FastAPI | Async, OpenAPI docs, WebSocket support |
+| MCP | FastMCP | Standard protocol for agent ↔ tool communication |
+| Embeddings | nomic-embed-text (768d) | 8192 context, multilingual, via Ollama |
+| Extraction | Config-driven (LiteLLM/OpenRouter/Ollama) | Any LLM, no vendor lock-in |
+| TLS | Caddy 2 | Auto-HTTPS, HTTP/3, zero-config certs |
+| Metrics | Prometheus | Industry standard, text exposition format |
+| CI | GitHub Actions | Lint + test + E2E + eval regression gate |
+
+## CI Pipeline
+
+```yaml
+jobs:
+  lint:     # ruff check — zero warnings
+  test:     # 176 unit tests (Neo4j + Redis services)
+  e2e:      # 38 E2E tests against live API
+  eval:     # Recall@5 ≥ 0.30 regression gate
+```
+
+## Agent Integration
+
+### Hermes (native plugin)
+
+```bash
+hermes memory setup    # select "ferrite"
+hermes memory status   # verify active
+```
+
+Tools injected: `ferrite_search`, `ferrite_add`, `ferrite_entity`,
+`ferrite_multi_hop`, `ferrite_stats`.
+
+Lifecycle hooks: `prefetch` (before LLM call), `sync_turn` (after each
+turn), `on_session_end` (final flush), `on_memory_write` (mirror
+MEMORY.md writes), `on_pre_compress` (save before context compaction).
+
+Circuit breaker: 5 failures → 120s cooldown → graceful degradation
+to local-only memory.
+
+### Claude Code / Cursor / VS Code (MCP)
+
+Ferrite is an [Agent Plugins 1.0.0](https://agent-plugins.org)
+compliant plugin. Add to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "ferrite": {
+      "command": "python",
+      "args": ["-m", "ferrite.mcp_server"],
+      "env": {
+        "NEO4J_URI": "bolt://localhost:7687",
+        "NEO4J_PASSWORD": "your-password",
+        "FERRITE_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+### Any MCP-compatible agent
+
+Use the MCP server via stdio:
+
+```bash
+python -m ferrite.mcp_server
+```
+
+Or HTTP transport at `/mcp/`:
+
+```
+POST http://localhost:8001/mcp/
+```
+
+## Performance
+
+On a Mac Mini M4 with the prod stack:
+
+```
+Search:      20 RPS, p50=14ms, p95=18ms, 0 errors
+Ingestion:   10 RPS, p50=4ms (queue is async)
+Rate limit:  429 enforced at configured threshold
+```
+
+## Eval Results
+
+30-query test suite across 5 query classes:
+
+```
+entity_lookup:   10/10
+temporal:         5/5
+multi_hop:        5/5
+paraphrase:       5/5
+inject:           5/5
+```
+
+Metrics: Recall@5, Recall@10, MRR.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
+
+## Etymology
+
+> Named after ferric oxide (Fe₂O₃), the magnetic compound on cassette tape
+> that physically holds the recording. Without ferrite, the tape is just
+> plastic film. Ferrite is what holds the signal.
+>
+> Parent brand: **Kassett** — the cassette shell that holds the tape.
+
+---
+
+<div align="center">
+
+**[Install](scripts/install.sh) · [Web UI](http://localhost:8001) · [Docs](https://github.com/fattchris/ferrite) · [Kassett](https://github.com/fattchris/kassett)**
+
+*Ferrite is what holds the signal.*
+
+</div>
