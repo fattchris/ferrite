@@ -1,0 +1,39 @@
+{
+  "timestamp": "2026-08-10T18:22:00",
+  "action": "migration_data_loss_recovery",
+  "summary": "Detected Neo4j data loss (14614 to 49 nodes) during migration run. Reset checkpoint and restarted migration from session 0.",
+  "incident": {
+    "description": "Migration had been running 6h (PID 83636, started 12:14 MDT). Accumulated 14614 nodes (5289 Facts, 412 Episodes) across 280 sessions. Between 18:12-18:15 MDT, data was deleted - only 49 nodes remained. Root cause: likely external MATCH (n) DETACH DELETE n or docker volume recreation. Checkpoint marked 280 sessions complete but their data was gone.",
+    "data_lost": "14614 nodes (5289 Facts, 5286 Observations, 1278 Literals, 1176 Entities, 1173 Aliases, 412 Episodes)",
+    "recovery": "Backed up broken checkpoint to /tmp/ferrite-migration-checkpoint.bak.json. Reset checkpoint to empty. Restarted migration (PID 56824). Found 1004 sessions. Processing from session 1."
+  },
+  "services": {
+    "neo4j": "healthy (5 constraints, 22 indexes, schema intact)",
+    "redis": "healthy (PONG, AOF enabled)",
+    "api": "healthy (/health returns neo4j+redis OK)",
+    "litellm": "running (glm-5.2 model available at :4000)"
+  },
+  "build_state": {
+    "gaps_resolved": "12/12",
+    "tests": "192/192 passing (21.54s)",
+    "ci_gates": "all 5 PASS",
+    "overall_status": "complete (migration in progress)"
+  },
+  "migration": {
+    "status": "running",
+    "pid": 56824,
+    "sessions_total": 1004,
+    "sessions_completed": 0,
+    "episodes_in_neo4j": 10,
+    "checkpoint": "/tmp/ferrite-migration-checkpoint.json (reset to empty)",
+    "log": "/tmp/ferrite-migration-full.log",
+    "estimated_duration": "~18-21h at 30s per episode, ~2 episodes per session"
+  },
+  "fixes_applied": [
+    "Stopped orphaned migration process (PID 83636)",
+    "Backed up broken checkpoint to /tmp/ferrite-migration-checkpoint.bak.json",
+    "Reset checkpoint to {completed_sessions: [], last_index: 0}",
+    "Verified Neo4j schema intact (5 constraints, 22 indexes)",
+    "Restarted migration from session 0 (PID 56824)"
+  ]
+}

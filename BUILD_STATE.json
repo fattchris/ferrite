@@ -2,8 +2,15 @@
   "project": "ferrite",
   "spec_version": "v3",
   "created": "2026-08-09T17:40:00",
-  "last_updated": "2026-08-10T18:30:00.000000",
+  "last_updated": "2026-08-10T18:22:00",
   "overall_status": "complete",
+  "migration": {
+    "status": "running",
+    "pid": 56824,
+    "sessions_total": 1004,
+    "sessions_completed": 0,
+    "note": "Restarted from 0 after data loss incident — see build_20260810_182200.json"
+  },
   "gaps": {
     "GAP-001": {
       "spec": "\u00a74.1",
@@ -103,9 +110,9 @@
     }
   },
   "test_state": {
-    "last_run": "2026-08-10T18:30:00.000000",
-    "total": 192,
-    "passed": 192,
+    "last_run": "2026-08-10T18:16:53.145877",
+    "total": 0,
+    "passed": 0,
     "failed": 0,
     "skipped": 0,
     "failing_tests": [],
