@@ -22,6 +22,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
+from .query import _lucene_escape
+
 logger = logging.getLogger(__name__)
 
 # --- Disposition defaults per namespace (§3.7) ---
@@ -155,7 +157,7 @@ def search_mental_models(
     """
     ns_filter = "AND m.namespace = $namespace" if namespace else ""
 
-    params: dict = {"search_text": query, "limit": limit}
+    params: dict = {"search_text": _lucene_escape(query), "limit": limit}
     if namespace:
         params["namespace"] = namespace
 

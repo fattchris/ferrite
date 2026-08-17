@@ -43,7 +43,7 @@ from .models import (
     StoreRequest,
     StoreResponse,
 )
-from .query import count_entities
+from .query import _lucene_escape, count_entities
 from .rate_limit import check_rate_limit
 from .structured_logging import setup_logging
 from .temporal import get_history_as_of_knowledge, get_history_as_of_world
@@ -125,7 +125,10 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                         },
                     )
                     with _urllib.urlopen(req, timeout=settings.LLM_TIMEOUT) as r:
-                        return json.loads(r.read())["choices"][0]["message"]["content"]
+                        msg = json.loads(r.read())["choices"][0]["message"]
+                        # Reasoning models (glm-5.3 via OpenRouter) put the
+                        # answer in reasoning_content when content is empty.
+                        return msg.get("content") or msg.get("reasoning_content") or ""
 
                 return _llm_client
 
@@ -399,7 +402,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 ORDER BY score DESC
                 LIMIT $limit
                 """,
-                search_query=query,
+                search_query=_lucene_escape(query),
                 namespace=namespace,
                 **ns_params,
                 limit=limit,

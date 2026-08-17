@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 """Deterministic migration: Hermes SQLite session DB → Ferrite knowledge graph.
 
-Reads user+assistant messages from the Hermes state.db, batches them into
-episodes, and ingests via the Ferrite extraction pipeline. Each episode
-records its source session_id and message range for traceability.
+STANDALONE — no Hermes dependency. Self-contained process with:
+  1. File-based PID lock — ensures only one instance runs
+  2. Idempotent via Neo4j episode existence check (not a checkpoint file)
+  3. Auto-recovery: retries on Neo4j transient errors, waits for services
+  4. Self-contained config: reads from ferrite/.env, no Hermes env required
 
 Usage:
     python scripts/migrate_from_sqlite.py [--db PATH] [--limit N] [--dry-run]
-
-Defaults:
-    --db      ~/.hermes/state.db
-    --limit   0 (all sessions)
-    --dry-run False
 
 Determinism guarantees:
     1. Sessions processed in started_at order (oldest first)
@@ -25,20 +22,24 @@ Determinism guarantees:
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import json
 import logging
 import os
 import sqlite3
 import sys
+import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 # Bootstrap ferrite imports
-FERRITE_SRC = os.path.expanduser("~/ferrite/src")
+FERRITE_ROOT = Path(__file__).resolve().parent.parent
+FERRITE_SRC = str(FERRITE_ROOT / "src")
 if FERRITE_SRC not in sys.path:
     sys.path.insert(0, FERRITE_SRC)
 
-import neo4j.exceptions
+import neo4j.exceptions  # noqa: E402
 from ferrite.ingestion import IngestionPipeline  # noqa: E402
 from ferrite.models import Episode  # noqa: E402
 
@@ -48,35 +49,111 @@ logging.basicConfig(
 )
 logger = logging.getLogger("migrate")
 
-DEFAULT_DB = os.path.expanduser("~/ferrite/state.db")
+# ── Paths ─────────────────────────────────────────────────
 HERMES_DB = os.path.expanduser("~/.hermes/state.db")
-CHECKPOINT_FILE = "/tmp/ferrite-migration-checkpoint.json"
+LOCK_FILE = "/tmp/ferrite-migration.lock"
+LOG_FILE = "/tmp/ferrite-migration-full.log"
+
+# ── Config loading ─────────────────────────────────────────
+
+def load_env() -> dict:
+    """Load config from ferrite/.env — no Hermes dependency."""
+    env_path = FERRITE_ROOT / ".env"
+    config = {
+        "neo4j_password": "ferrite123",
+        "litellm_api_key": "",
+        "neo4j_uri": "bolt://localhost:7687",
+        "neo4j_user": "neo4j",
+        "redis_url": "redis://localhost:6379",
+        "litellm_base_url": "http://localhost:4000",
+        "llm_model": "glm-5.2",
+    }
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            kl = key.lower()
+            if kl == "neo4j_password":
+                config["neo4j_password"] = val
+            elif kl == "litellm_api_key":
+                config["litellm_api_key"] = val
+            elif kl == "neo4j_uri":
+                config["neo4j_uri"] = val
+            elif kl == "neo4j_user":
+                config["neo4j_user"] = val
+            elif kl == "redis_url":
+                config["redis_url"] = val
+            elif kl == "litellm_base_url":
+                config["litellm_base_url"] = val
+            elif kl == "llm_model":
+                config["llm_model"] = val
+    # Allow env var overrides
+    config["neo4j_password"] = os.environ.get("FERRITE_NEO4J_PASSWORD", config["neo4j_password"])
+    config["litellm_api_key"] = os.environ.get("FERRITE_LITELLM_API_KEY", config["litellm_api_key"])
+    return config
 
 
-def load_checkpoint() -> dict:
-    """Load checkpoint of completed session indices for fast resume."""
+# ── PID Lock — ensures single instance ─────────────────────
+
+def acquire_lock() -> None:
+    """Acquire file-based PID lock. Exits if another instance is running."""
+    lock_path = Path(LOCK_FILE)
+    if lock_path.exists():
+        try:
+            old_pid = int(lock_path.read_text().strip())
+            # Check if that PID is still alive and is actually our migration
+            try:
+                os.kill(old_pid, 0)  # signal 0 = check alive
+                # PID is alive — check if it's actually our migration
+                try:
+                    cmdline = Path(f"/proc/{old_pid}/cmdline").read_text()
+                    if "migrate_from_sqlite" in cmdline:
+                        logger.error(
+                            "Another migration is already running (PID %d). Exiting.",
+                            old_pid,
+                        )
+                        sys.exit(1)
+                except (FileNotFoundError, PermissionError):
+                    # macOS doesn't have /proc — check via ps
+                    import subprocess
+                    result = subprocess.run(
+                        ["ps", "-p", str(old_pid), "-o", "command="],
+                        capture_output=True, text=True,
+                    )
+                    if result.returncode == 0 and "migrate_from_sqlite" in result.stdout:
+                        logger.error(
+                            "Another migration is already running (PID %d). Exiting.",
+                            old_pid,
+                        )
+                        sys.exit(1)
+            except (OSError, ProcessLookupError):
+                # PID is dead — stale lock, claim it
+                logger.info("Found stale lock (PID %d not alive) — claiming", old_pid)
+        except (ValueError, OSError):
+            # Corrupt lock file — overwrite
+            logger.warning("Corrupt lock file — overwriting")
+
+    # Write our PID
+    lock_path.write_text(str(os.getpid()))
+    # Register cleanup on exit
+    atexit.register(release_lock)
+
+
+def release_lock() -> None:
+    """Release the PID lock on clean exit."""
     try:
-        with open(CHECKPOINT_FILE) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {"completed_sessions": [], "last_index": 0}
+        Path(LOCK_FILE).unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
-def save_checkpoint(checkpoint: dict) -> None:
-    """Persist checkpoint to disk for crash recovery."""
-    try:
-        with open(CHECKPOINT_FILE, "w") as f:
-            json.dump(checkpoint, f)
-    except OSError as e:
-        logger.warning("Failed to save checkpoint: %s", e)
-
-
-def deterministic_episode_id(session_id: str, first_ts: float) -> str:
-    """Generate a deterministic episode ID from session + first message timestamp."""
-    raw = f"hermes:{session_id}:{first_ts}"
-    h = hashlib.sha1(raw.encode()).hexdigest()
-    return f"h-{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
-
+# ── Database helpers ───────────────────────────────────────
 
 def get_sessions(conn: sqlite3.Connection, limit: int = 0) -> list[dict]:
     """Get sessions in started_at order, with message counts."""
@@ -110,28 +187,23 @@ def get_session_messages(conn: sqlite3.Connection, session_id: str) -> list[dict
     return [dict(zip([d[0] for d in cur.description], row)) for row in cur]
 
 
+# ── Neo4j helpers ──────────────────────────────────────────
+
 def _neo4j_retry(driver, cypher, **params):
     """Run a Neo4j query with retry logic for transient errors.
 
-    Retries on a broad set of transient errors:
+    Retries on:
     - ServiceUnavailable: Neo4j down or restarting
     - DatabaseError: internal Neo4j error during heavy writes
-    - OSError: socket-level errors ("No data", "Connection reset") from
-      stale pooled connections after a Neo4j restart
+    - OSError: socket-level errors from stale pooled connections
     - TransientError: temporary transaction conflicts
-
-    On retry, forces the driver to drop its stale connection pool by
-    calling driver.verify_connectivity() before retrying.
     """
-    import neo4j.exceptions
-    import time
-
     max_retries = 5
     transient = (
         neo4j.exceptions.ServiceUnavailable,
         neo4j.exceptions.DatabaseError,
         neo4j.exceptions.TransientError,
-        OSError,  # socket-level: "No data", "Connection reset by peer"
+        OSError,
     )
 
     for attempt in range(max_retries):
@@ -141,16 +213,15 @@ def _neo4j_retry(driver, cypher, **params):
                 return result.single()
         except transient as e:
             if attempt < max_retries - 1:
-                wait = 2 ** attempt  # 1s, 2s, 4s, 8s exponential backoff
+                wait = 2 ** attempt
                 logger.warning(
                     "Neo4j transient error (attempt %d/%d): %s — retrying in %ds",
                     attempt + 1, max_retries, e, wait,
                 )
-                # Force pool to discard stale connections
                 try:
                     driver.verify_connectivity()
                 except Exception:
-                    pass  # verify itself may fail; the retry will catch it
+                    pass
                 time.sleep(wait)
             else:
                 raise
@@ -166,6 +237,41 @@ def check_episode_exists(driver, episode_id: str) -> bool:
     return record["c"] > 0 if record else False
 
 
+def wait_for_neo4j(driver, timeout_sec: int = 300) -> None:
+    """Wait for Neo4j to be ready, up to timeout.
+
+    Uses exponential backoff: 2s, 4s, 8s, 15s, 15s, ...
+    This avoids Neo4j's auth rate limiter which triggers on rapid retries.
+    """
+    backoff = 2
+    elapsed = 0
+    attempt = 0
+    while elapsed < timeout_sec:
+        try:
+            driver.verify_connectivity()
+            return
+        except Exception as e:
+            attempt += 1
+            if elapsed + backoff >= timeout_sec:
+                raise RuntimeError(f"Neo4j not available after {timeout_sec}s: {e}")
+            logger.warning(
+                "Neo4j not ready (attempt %d): %s — waiting %ds",
+                attempt, str(e)[:100], backoff,
+            )
+            time.sleep(backoff)
+            elapsed += backoff
+            backoff = min(backoff * 2, 15)  # cap at 15s
+
+
+# ── Episode generation ─────────────────────────────────────
+
+def deterministic_episode_id(session_id: str, first_ts: float) -> str:
+    """Generate a deterministic episode ID from session + first message timestamp."""
+    raw = f"hermes:{session_id}:{first_ts}"
+    h = hashlib.sha1(raw.encode()).hexdigest()
+    return f"h-{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}"
+
+
 def session_to_episodes(session: dict, messages: list[dict]) -> list[Episode]:
     """Convert a session's messages into batched episodes.
 
@@ -173,13 +279,12 @@ def session_to_episodes(session: dict, messages: list[dict]) -> list[Episode]:
     session is short. Each episode gets a deterministic ID.
     """
     episodes = []
-    batch_size = 20  # messages per episode
+    batch_size = 20
 
     for i in range(0, len(messages), batch_size):
         batch = messages[i:i + batch_size]
         first_ts = batch[0]["timestamp"]
 
-        # Build content
         lines = []
         for msg in batch:
             role = msg["role"].capitalize()
@@ -218,31 +323,57 @@ def session_to_episodes(session: dict, messages: list[dict]) -> list[Episode]:
     return episodes
 
 
+# ── LLM client ─────────────────────────────────────────────
+
+def make_llm_client(base_url: str, api_key: str, model: str):
+    """Create a deterministic LLM client (temperature=0, no thinking)."""
+    import urllib.request
+
+    def llm_client(system_prompt: str, user_prompt: str) -> str:
+        data = json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }).encode()
+        req = urllib.request.Request(
+            f"{base_url}/v1/chat/completions",
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=120) as r:
+            msg = json.loads(r.read())["choices"][0]["message"]
+            return msg.get("content") or msg.get("reasoning_content") or ""
+
+    return llm_client
+
+
+# ── Migration ──────────────────────────────────────────────
+
 def migrate(
-    db_path: str = HERMES_DB,
-    neo4j_uri: str = "bolt://localhost:7687",
-    neo4j_user: str = "neo4j",
-    neo4j_password: str = "ferrite123",
-    redis_url: str = "redis://localhost:6379",
-    litellm_base_url: str = "http://localhost:4000",
-    litellm_api_key: str = "",
-    llm_model: str = "glm-5.2",
+    db_path: str,
+    config: dict,
     limit: int = 0,
     dry_run: bool = False,
 ) -> dict:
     """Run the migration. Returns summary stats."""
     logger.info("Starting SQLite → Ferrite migration")
     logger.info("  DB: %s", db_path)
-    logger.info("  Neo4j: %s", neo4j_uri)
     logger.info("  Limit: %s sessions", limit if limit > 0 else "ALL")
     logger.info("  Dry run: %s", dry_run)
+    logger.info("  PID: %d (lock: %s)", os.getpid(), LOCK_FILE)
 
     # Connect to SQLite
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     logger.info("Connected to SQLite")
 
-    # Get sessions
     sessions = get_sessions(conn, limit=limit)
     logger.info("Found %d sessions with messages", len(sessions))
 
@@ -255,68 +386,35 @@ def migrate(
         conn.close()
         return {"sessions": len(sessions), "messages": total_msgs, "episodes": 0, "facts": 0}
 
-    # Connect to Neo4j + Redis
+    # Connect to Neo4j
     from neo4j import GraphDatabase
 
     driver = GraphDatabase.driver(
-        neo4j_uri,
-        auth=(neo4j_user, neo4j_password),
+        config["neo4j_uri"],
+        auth=(config["neo4j_user"], config["neo4j_password"]),
         max_connection_lifetime=300,
         max_connection_pool_size=50,
         connection_acquisition_timeout=30,
     )
-
-    # Wait for Neo4j to be ready (up to 120s)
-    import time as _time
-    for attempt in range(60):
-        try:
-            driver.verify_connectivity()
-            break
-        except Exception as e:
-            if attempt < 59:
-                logger.warning(
-                    "Neo4j not ready (attempt %d/60): %s — waiting 2s",
-                    attempt + 1, e,
-                )
-                _time.sleep(2)
-            else:
-                raise RuntimeError(f"Neo4j not available after 120s: {e}")
+    wait_for_neo4j(driver)
     logger.info("Connected to Neo4j")
 
-    # LLM client for extraction
-    def llm_client(system_prompt: str, user_prompt: str) -> str:
-        import urllib.request
-        data = json.dumps({
-            "model": llm_model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": 0.1,
-        }).encode()
-        req = urllib.request.Request(
-            f"{litellm_base_url}/v1/chat/completions",
-            data=data,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {litellm_api_key}",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=120) as r:
-            return json.loads(r.read())["choices"][0]["message"]["content"]
+    # LLM client
+    llm_client = make_llm_client(
+        config["litellm_base_url"],
+        config["litellm_api_key"],
+        config["llm_model"],
+    )
 
+    # Ingestion pipeline
     pipe = IngestionPipeline(
-        redis_url=redis_url,
-        neo4j_uri=neo4j_uri,
-        neo4j_user=neo4j_user,
-        neo4j_password=neo4j_password,
+        redis_url=config["redis_url"],
+        neo4j_uri=config["neo4j_uri"],
+        neo4j_user=config["neo4j_user"],
+        neo4j_password=config["neo4j_password"],
         llm_client=llm_client,
     )
     logger.info("Ingestion pipeline ready")
-
-    # Migrate
-    checkpoint = load_checkpoint()
-    completed_sessions = set(checkpoint.get("completed_sessions", []))
 
     stats = {
         "sessions_processed": 0,
@@ -331,39 +429,29 @@ def migrate(
         session_id = session["id"]
         title = session.get("title") or "(untitled)"
 
-        # Skip sessions already completed per checkpoint
-        if session_id in completed_sessions:
-            stats["sessions_skipped"] += 1
-            continue
-
         # Get messages
         messages = get_session_messages(conn, session_id)
         if not messages:
             continue
 
-        # Build episodes
         episodes = session_to_episodes(session, messages)
 
-        # Top-level resilience: if Neo4j drops during this session,
-        # wait for it to come back instead of crashing the whole migration.
+        # Idempotency: check if ALL episodes already exist in Neo4j
+        # If they do, skip this session entirely
+        try:
+            all_exist = all(check_episode_exists(driver, ep.id) for ep in episodes)
+        except Exception as e:
+            logger.warning("Idempotency check failed for session %s: %s — processing anyway", session_id, e)
+            all_exist = False
+
+        if all_exist:
+            stats["sessions_skipped"] += 1
+            continue
+
+        # Process session with auto-recovery
         session_done = False
         while not session_done:
             try:
-                # Check if already migrated (Neo4j idempotency)
-                all_exist = True
-                for ep in episodes:
-                    if not check_episode_exists(driver, ep.id):
-                        all_exist = False
-                        break
-
-                if all_exist:
-                    stats["sessions_skipped"] += 1
-                    completed_sessions.add(session_id)
-                    save_checkpoint({"completed_sessions": list(completed_sessions), "last_index": i})
-                    session_done = True
-                    break
-
-                # Ingest
                 for ep in episodes:
                     if check_episode_exists(driver, ep.id):
                         stats["episodes_skipped"] += 1
@@ -373,7 +461,7 @@ def migrate(
                         pipe.enqueue(ep)
                         pipe.process_next()
 
-                        # Count facts (non-fatal if this fails)
+                        # Count facts (non-fatal)
                         try:
                             record = _neo4j_retry(
                                 driver,
@@ -382,8 +470,7 @@ def migrate(
                                 ep_id=ep.id,
                             )
                             fact_count = record["c"] if record else 0
-                        except Exception as count_err:
-                            logger.debug("Fact count query failed for %s: %s", ep.id, count_err)
+                        except Exception:
                             fact_count = 0
 
                         stats["episodes_created"] += 1
@@ -397,23 +484,20 @@ def migrate(
                         logger.error("  Episode %s failed: %s", ep.id, e, exc_info=True)
 
                 stats["sessions_processed"] += 1
-                completed_sessions.add(session_id)
-                save_checkpoint({"completed_sessions": list(completed_sessions), "last_index": i})
                 session_done = True
 
             except (neo4j.exceptions.ServiceUnavailable, neo4j.exceptions.TransientError, OSError) as e:
                 logger.warning(
-                    "Neo4j connection lost during session %s: %s — "
-                    "waiting 10s for recovery, then retrying",
+                    "Neo4j connection lost during session %s: %s — waiting 10s",
                     session_id, e,
                 )
-                _time.sleep(10)
+                time.sleep(10)
                 try:
                     driver.verify_connectivity()
                     logger.info("Neo4j reconnected, resuming")
                 except Exception:
-                    logger.warning("Neo4j still down, waiting another 30s")
-                    _time.sleep(30)
+                    logger.warning("Neo4j still down, waiting 30s")
+                    time.sleep(30)
                     try:
                         driver.verify_connectivity()
                         logger.info("Neo4j reconnected after extended wait")
@@ -421,7 +505,7 @@ def migrate(
                         logger.error("Neo4j still down after 40s: %s", e2)
                         raise RuntimeError(f"Neo4j unrecoverable: {e2}")
 
-        # Progress
+        # Progress every 50 sessions
         if (i + 1) % 50 == 0:
             logger.info(
                 "Progress: %d/%d sessions (%d episodes, %d facts, %d errors)",
@@ -455,62 +539,23 @@ if __name__ == "__main__":
         help=f"Path to Hermes state.db (default: {HERMES_DB})",
     )
     parser.add_argument(
-        "--neo4j-uri", default="bolt://localhost:7687",
-        help="Neo4j Bolt URI",
-    )
-    parser.add_argument(
-        "--neo4j-user", default="neo4j",
-        help="Neo4j username",
-    )
-    parser.add_argument(
-        "--neo4j-password", default="ferrite123",
-        help="Neo4j password (or set FERRITE_NEO4J_PASSWORD env var)",
-    )
-    parser.add_argument(
-        "--redis-url", default="redis://localhost:6379",
-        help="Redis URL for ingestion queue",
-    )
-    parser.add_argument(
-        "--litellm-base-url", default="http://localhost:4000",
-        help="LiteLLM proxy URL",
-    )
-    parser.add_argument(
-        "--litellm-api-key", default="",
-        help="LiteLLM API key (or set FERRITE_LITELLM_API_KEY env var)",
-    )
-    parser.add_argument(
-        "--llm-model", default="glm-5.2",
-        help="LLM model for extraction",
-    )
-    parser.add_argument(
         "--limit", type=int, default=0,
         help="Max sessions to migrate (0 = all)",
     )
     parser.add_argument(
         "--dry-run", action="store_true",
-        help="Analyze without ingesting — shows what would be migrated",
+        help="Analyze without ingesting",
     )
 
     args = parser.parse_args()
+    config = load_env()
 
-    # Pull secrets from env if not provided
-    neo4j_password = args.neo4j_password
-    if neo4j_password == "ferrite123":
-        neo4j_password = os.environ.get("FERRITE_NEO4J_PASSWORD", neo4j_password)
-
-    litellm_api_key = args.litellm_api_key
-    if not litellm_api_key:
-        litellm_api_key = os.environ.get("FERRITE_LITELLM_API_KEY", "")
+    # Acquire lock — ensures we're the only instance
+    acquire_lock()
 
     migrate(
         db_path=args.db,
-        neo4j_uri=args.neo4j_uri,
-        neo4j_user=args.neo4j_user,
-        neo4j_password=neo4j_password,
-        redis_url=args.redis_url,
-        litellm_base_url=args.litellm_base_url,
-        litellm_api_key=litellm_api_key,
-        llm_model=args.llm_model,
+        config=config,
         limit=args.limit,
         dry_run=args.dry_run,
     )

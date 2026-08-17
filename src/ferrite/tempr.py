@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from .models import Embedder
-from .query import _bm25_search, vector_search
+from .query import _bm25_search, _lucene_escape, vector_search
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,7 @@ def _temporal_search(
                 ORDER BY score DESC
                 LIMIT $limit
                 """,
-                search_text=query_text,
+                search_text=_lucene_escape(query_text),
                 **params,
             )
             return [dict(r) for r in result]

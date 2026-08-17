@@ -265,6 +265,22 @@ def search_facts(
     return _bm25_search(driver, query, namespace=namespace, limit=limit)
 
 
+def _lucene_escape(query: str) -> str:
+    """Escape Lucene special chars so raw user text can't break the parser.
+
+    Keeps it simple: escape everything Lucene treats as syntax, then the
+    query is treated as plain terms.
+    """
+    specials = '+-&|!(){}[]^"~*?:\\/'
+    out = []
+    for ch in query:
+        if ch in specials:
+            out.append("\\" + ch)
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def _bm25_search(
     driver: Driver,
     query: str,
@@ -293,7 +309,7 @@ def _bm25_search(
             ORDER BY score DESC
             LIMIT $limit
             """,
-            search_text=query,
+            search_text=_lucene_escape(query),
             namespace=namespace,
             limit=limit,
         )
