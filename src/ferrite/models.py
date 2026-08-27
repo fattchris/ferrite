@@ -105,6 +105,32 @@ class ExtractionResult(BaseModel):
     facts: list[ExtractedFact] = Field(default_factory=list)
 
 
+# --- Direct assertion endpoint (zero-LLM ingestion) ---
+
+class AssertFact(BaseModel):
+    subject: str
+    predicate: str
+    object: str
+    object_type: Literal["entity", "literal"] = "entity"
+    certainty: Literal["stated", "inferred", "speculative"] = "stated"
+    valid_at: Optional[str] = None
+    negation: bool = False
+
+
+class AssertEntity(BaseModel):
+    name: str
+    type: Literal["entity", "concept"] = "entity"
+    summary: str = ""
+
+
+class AssertRequest(BaseModel):
+    facts: list[AssertFact] = Field(default_factory=list)
+    entities: list[AssertEntity] = Field(default_factory=list)
+    content: Optional[str] = None  # optional raw context kept for provenance
+    source: dict = Field(default_factory=dict)
+    namespace: Optional[str] = None
+
+
 # --- Issue 28: Typed key info ---
 
 class KeyInfo(BaseModel):

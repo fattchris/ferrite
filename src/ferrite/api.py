@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
 from datetime import datetime
 from typing import Optional
@@ -42,8 +43,11 @@ from .models import (
     SearchResult,
     StoreRequest,
     StoreResponse,
+    AssertRequest,
 )
 from .query import _lucene_escape, count_entities
+from .canonicalize import resolve_entity
+from .quality_gates import assertion_gate
 from .rate_limit import check_rate_limit
 from .structured_logging import setup_logging
 from .temporal import get_history_as_of_knowledge, get_history_as_of_world
@@ -166,6 +170,23 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 pipeline.start_consumer(poll_interval=1.0)
             )
             logger.info("In-proc ingestion consumer started")
+
+            # Consolidation consumer (A16): drain pending_consolidation set
+            from .consolidator import run_consolidation_worker
+
+            app.state.consolidation_stop = threading.Event()
+            app.state.consolidation_thread = threading.Thread(
+                target=run_consolidation_worker,
+                args=(
+                    pipeline.driver,
+                    pipeline.llm_client,
+                    pipeline.redis_client,
+                    app.state.consolidation_stop,
+                ),
+                daemon=True,
+            )
+            app.state.consolidation_thread.start()
+            logger.info("Consolidation worker started")
 
     @app.on_event("shutdown")
     async def stop_ingestion_consumer():
@@ -345,6 +366,93 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
                 lambda: (_ for _ in ()).throw(err),
                 fallback=None,
             )
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/assert")
+    async def assert_facts(request: Request, req: "AssertRequest"):
+        """Direct assertion path: agent-supplied triples, ZERO LLM extraction.
+
+        The calling model emits facts it already knows as tool calls; we only
+        validate predicate vocab + resolve entities + apply temporal logic.
+        """
+        from .circuit_breaker import get_circuit_breaker
+        from .models import Episode, ExtractedEntity, ExtractedFact, ExtractionResult
+
+        key_info = getattr(request.state, "key_info", None)
+        if key_info and not ks_has_namespace(key_info, req.namespace):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Namespace '{req.namespace}' not allowed for this key",
+            )
+        breaker = get_circuit_breaker()
+        if not breaker.can_execute():
+            raise HTTPException(status_code=503, detail="Circuit breaker open")
+
+        if pipeline is None:
+            raise HTTPException(status_code=503, detail="Pipeline not available")
+
+        try:
+            # Reuse the standard extraction result shape — everything downstream
+            # (entity resolution, supersession, consolidation) works unchanged.
+            entities = [
+                ExtractedEntity(name=e.name, type=e.type, summary=e.summary)
+                for e in req.entities
+            ]
+            facts = [
+                ExtractedFact(
+                    subject=f.subject,
+                    predicate=f.predicate,
+                    object=f.object,
+                    object_type=f.object_type,
+                    certainty=f.certainty,
+                    assertion_source="user",   # agent-asserted == user-tier trust
+                    valid_at=f.valid_at,
+                    negation=f.negation,
+                )
+                for f in req.facts
+            ]
+            if not facts and not entities:
+                raise HTTPException(status_code=422, detail="No facts or entities supplied")
+
+            episode = Episode(
+                content=req.content or "\n".join(f"{f.subject} {f.predicate} {f.object}" for f in facts),
+                content_type="structured",
+                source=req.source or {"agent": "api"},
+                namespace=req.namespace or settings.NAMESPACE_DEFAULT,
+            )
+
+            # Process inline: entities must resolve before fact write.
+            entity_cache = {}
+            for ent_data in entities:
+                entity = resolve_entity(
+                    pipeline.driver, ent_data.name, pipeline.embedding_func,
+                    entity_type=ent_data.type, summary=ent_data.summary,
+                )
+                if entity is not None:
+                    entity_cache[ent_data.name] = entity
+            for f in facts:
+                for name in ([f.subject] + ([f.object] if f.object_type == "entity" else [])):
+                    if name not in entity_cache:
+                        e = resolve_entity(pipeline.driver, name, pipeline.embedding_func)
+                        if e is not None:
+                            entity_cache[name] = e
+
+            written = 0
+            with pipeline.driver.session() as session:
+                for fact_data in facts:
+                    if not assertion_gate(fact_data.model_dump()):
+                        continue
+                    pipeline._write_fact_with_temporal(episode, fact_data, entity_cache, session)
+                    written += 1
+
+            from .metrics import get_metrics
+            get_metrics().increment("ingestion_asserted", tags={"namespace": episode.namespace})
+            return {"episode_id": episode.id, "facts_written": written, "status": "written"}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            err = exc
+            breaker.call(lambda: (_ for _ in ()).throw(err), fallback=None)
             raise HTTPException(status_code=500, detail=str(exc))
 
     @app.get("/search", response_model=SearchResponse)

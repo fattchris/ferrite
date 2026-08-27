@@ -12,6 +12,7 @@ Architecture (§7.1):
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import threading
@@ -37,6 +38,16 @@ from .temporal import (
 )
 from .vocab import is_functional, is_valid_predicate
 
+
+# Tiered ingestion (zero-LLM-first)
+try:
+    from .pattern_extract import extract_patterns
+    from .vocab import PREDICATE_VOCAB
+    from .triage import TriageVerdict, triage as _triage
+    _TIAGE_OK = True
+except ImportError as _e:
+    logger.warning(f"tiered ingest unavailable: {_e}")
+    _TIAGE_OK = False
 logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ferrite:ingestion:queue"
@@ -265,6 +276,22 @@ class IngestionPipeline:
         logger.info(f"Processing episode {episode.id}")
 
         try:
+            # ---- Tiered ingestion (zero-LLM-first) ----
+            verdict = None
+            if _TIAGE_OK:
+                verdict = _triage(episode.content, episode.content_type)
+                logger.info(
+                    f"Episode {episode.id} triage tier={verdict.tier} "
+                    f"conf={verdict.confidence:.2f} ({verdict.reason})"
+                )
+                if verdict.tier == "skip":
+                    # Nothing extractable; record as processed with zero facts.
+                    self._record_file(episode) if hasattr(self, "_record_file") else None
+                    from .metrics import get_metrics
+                    get_metrics().increment("ingestion_skipped", tags={"tier": "skip"})
+                    logger.info(f"Episode {episode.id} skipped by triage (LLM call avoided)")
+                    return
+
             # Step 1: Extract entities and facts via LLM (with retry, F-7 fix)
             try:
                 extraction = extract(episode.content, self.llm_client)
@@ -281,6 +308,29 @@ class IngestionPipeline:
 
             if extraction is None:
                 raise RuntimeError("Extraction returned None after retries")
+
+            # Pattern tier: run deterministic extractor; if it yields facts,
+            # use them INSTEAD of the LLM result (the LLM was only a fallback).
+            if _TIAGE_OK and verdict is not None and verdict.tier == "pattern":
+                try:
+                    emb = self.embedding_func
+                    pat_facts = extract_patterns(episode.content, emb, PREDICATE_VOCAB)
+                    if pat_facts:
+                        names = {f.subject for f in pat_facts} | {
+                            f.object for f in pat_facts if f.object_type == "entity"
+                        }
+                        extraction.entities = [
+                            e for e in extraction.entities if e.name in names
+                        ] or [type(e)(name=n) for n in sorted(names)]
+                        extraction.facts = pat_facts
+                        logger.info(
+                            f"Episode {episode.id}: pattern tier produced "
+                            f"{len(pat_facts)} facts — LLM extraction discarded"
+                        )
+                        from .metrics import get_metrics
+                        get_metrics().increment("ingestion_pattern_extracted")
+                except Exception as pe:
+                    logger.warning(f"Pattern extraction failed, using LLM result: {pe}")
 
             # Step 2: Canonicalize entities
             entity_cache: dict[str, object] = {}
@@ -510,37 +560,47 @@ class IngestionPipeline:
                 recorded_at=episode.recorded_at.isoformat(),
             )
 
-            # Create Fact node
-            session.run(
+            # Create Fact node — MERGE on (namespace, statement_hash) so a
+            # re-ingested episode or repeated assertion doesn't duplicate the
+            # fact. New evidence still creates new facts when the statement
+            # differs; identical statements attach SOURCED_FROM to the
+            # existing fact instead.
+            effective_id = session.run(
                 """
-                CREATE (f:Fact {
-                    id: $id,
-                    predicate: $predicate,
-                    statement: $statement,
-                    functional: $functional,
-                    certainty: $certainty,
-                    epistemic_state: $epistemic_state,
-                    assertion_source: $assertion_source,
-                    valid_at: $valid_at,
-                    valid_at_inferred: $valid_at_inferred,
-                    invalid_at: $invalid_at,
-                    recorded_at: $recorded_at,
-                    namespace: $namespace
-                })
+                MERGE (f:Fact {namespace: $namespace, statement_hash: $statement_hash})
+                ON CREATE SET
+                    f.id = $id,
+                    f.predicate = $predicate,
+                    f.statement = $statement,
+                    f.functional = $functional,
+                    f.certainty = $certainty,
+                    f.epistemic_state = $epistemic_state,
+                    f.assertion_source = $assertion_source,
+                    f.valid_at = $valid_at,
+                    f.valid_at_inferred = $valid_at_inferred,
+                    f.invalid_at = null,
+                    f.recorded_at = $recorded_at
+                ON MATCH SET
+                    f.proof_count = coalesce(f.proof_count, 1) + 1
+                RETURN f.id AS effective_id
                 """,
                 id=fact.id,
                 predicate=fact.predicate,
                 statement=fact.statement,
+                statement_hash=hashlib.sha256(
+                    f"{fact.namespace}|{fact.statement}".encode()
+                ).hexdigest(),
                 functional=fact.functional,
                 certainty=fact.certainty,
                 epistemic_state=fact.epistemic_state,
                 assertion_source=fact.assertion_source,
                 valid_at=fact.valid_at.isoformat(),
                 valid_at_inferred=fact.valid_at_inferred,
-                invalid_at=None,
                 recorded_at=fact.recorded_at.isoformat(),
                 namespace=fact.namespace,
-            )
+            ).single()["effective_id"]
+            # Downstream links must target the surviving node's id
+            fact.id = effective_id  # type: ignore[assignment]
 
             # Link subject
             session.run(
