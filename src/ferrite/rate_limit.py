@@ -10,10 +10,12 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Rate limits (requests per window)
-READ_LIMIT = 100      # 100 reads per 10s window
-WRITE_LIMIT = 20      # 20 writes per 10s window
-WINDOW_SECONDS = 10
+# Rate limits (requests per window). Env-tunable so heavy ingesters (backfill,
+# batch jobs) can raise limits without code changes.
+import os as _os
+READ_LIMIT = int(_os.environ.get("FERRITE_READ_LIMIT", "100"))
+WRITE_LIMIT = int(_os.environ.get("FERRITE_WRITE_LIMIT", "20"))
+WINDOW_SECONDS = int(_os.environ.get("FERRITE_RATE_WINDOW", "10"))
 
 
 def check_rate_limit(

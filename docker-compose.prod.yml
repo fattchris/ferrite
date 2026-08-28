@@ -112,6 +112,7 @@ services:
       - EMBEDDING_MODEL=nomic-embed-text
       - FERRITE_API_KEY=${FERRITE_API_KEY}
       - FERRITE_KEYS_DB=/app/data/keys.db
+      - FERRITE_WRITE_LIMIT=${FERRITE_WRITE_LIMIT:-120}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ferrite_api_data:/app/data
