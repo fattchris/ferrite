@@ -940,34 +940,97 @@ async def main_stdio():
         )
 
 
-async def main_http(host: str = "0.0.0.0", port: int = 8002):
+def main_http(host: str = "0.0.0.0", port: int = 8002):
     """Run the MCP server over streamable HTTP at /mcp/ (§4.1).
 
-    Broad compatibility — HTTP transport for agents that can't use stdio.
+    Stateless mode: a fresh transport per request (per MCP SDK stateless
+    pattern) — any number of clients can connect concurrently.
     Usage: python -m ferrite.mcp_server --http
     """
     import uvicorn
     from starlette.applications import Starlette
     from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse as _JSONResponse
     from starlette.routing import Route
 
     logging.basicConfig(level=logging.INFO)
     logger.info(f"Starting MCP HTTP server on {host}:{port}/mcp/")
 
-    # One transport per session (MCP streamable HTTP protocol)
-    transport = StreamableHTTPServerTransport(mcp_session_id=None)
+    import asyncio as _asyncio
+    import contextlib as _ctxlib
+    import uuid as _uuid
+
+    # session_id -> {"transport":..., "task":...}; stateful per client session.
+    _sessions: dict = {}
+
+    async def _handle_stateless(request):
+        """Stateful per MCP session: initialize creates a session; subsequent
+        requests with the Mcp-Session-Id header reuse its transport."""
+        header_sid = request.headers.get("mcp-session-id")
+
+        if header_sid and header_sid in _sessions:
+            transport = _sessions[header_sid]["transport"]
+            await transport.handle_request(
+                request.scope, request.receive, request._send
+            )
+            return
+
+        transport = StreamableHTTPServerTransport(
+            mcp_session_id=_uuid.uuid4().hex,
+            is_json_response_enabled=True,
+        )
+        sid = transport.mcp_session_id
+
+        ready = _asyncio.Event()
+
+        async def _run_server():
+            async with transport.connect() as (read_stream, write_stream):
+                ready.set()
+                await server.run(
+                    read_stream,
+                    write_stream,
+                    server.create_initialization_options(),
+                )
+
+        server_task = _asyncio.create_task(_run_server())
+        _sessions[sid] = {"transport": transport, "task": server_task}
+
+        async def _send_with_session(scope, receive, send):
+            async def send_wrapper(message):
+                if message.get("type") == "http.response.start":
+                    headers = list(message.get("headers", []))
+                    headers.append((b"mcp-session-id", sid.encode()))
+                    message["headers"] = headers
+                await send(message)
+            await transport.handle_request(scope, receive, send_wrapper)
+
+        try:
+            await _asyncio.wait_for(ready.wait(), timeout=5)
+            # Force JSON responses: some HTTP clients (undici) treat SSE content-type
+            # as an open stream and never "finish" the request. Accept header is
+            # rewritten to application/json so the SDK replies with plain JSON.
+            scope = dict(request.scope)
+            for idx, (k, v) in enumerate(scope.get("headers", [])):
+                if k == b"accept":
+                    scope["headers"][idx] = (k, b"application/json")
+                    break
+            await _send_with_session(scope, request.receive, request._send)
+        finally:
+            # If the client has completed and closed, sessions can be GC'd lazily.
+            if len(_sessions) > 512:
+                _sessions.clear()
 
     async def handle_mcp(request):
-        """Handle MCP JSON-RPC requests at POST /mcp/."""
-        await transport.handle_request(
-            request.scope, request.receive, request._send
-        )
+        """POST → per-session handling. GET/DELETE → 405."""
+        if request.method in ("GET", "DELETE"):
+            return _JSONResponse(
+                {"detail": "GET/DELETE not supported (stateful POST-only)"},
+                status_code=405,
+            )
+        return await _handle_stateless(request)
 
-    # --- Auth (§6.1): same key store as the REST API. Token via
-    # Authorization: Bearer / X-API-Key. Falls back to dev mode when no
-    # FERRITE_API_KEY and no keys DB exist (matches api.py behavior).
+    # --- Auth (§6.1): same key store as the REST API ---
     from .key_store import validate_token as _ks_validate
-    from starlette.responses import JSONResponse as _JSONResponse
 
     def _mcp_key_from_request(request):
         auth = request.headers.get("authorization", "")
@@ -975,57 +1038,47 @@ async def main_http(host: str = "0.0.0.0", port: int = 8002):
             return auth[7:]
         return request.headers.get("x-api-key", "")
 
-    async def mcp_auth_middleware(request, call_next):
-        key_info = _ks_validate(_mcp_key_from_request(request))
-        if key_info is None:
-            env_key = os.environ.get("FERRITE_API_KEY", "")
-            keys_db = os.environ.get("FERRITE_KEYS_DB", "")
-            if not env_key and not keys_db:
-                # Dev mode: no keys configured at all
-                key_info = SimpleNamespace(
-                    key_id="dev", agent_name="dev",
-                    scopes=["read", "write", "ingest", "admin"],
-                    namespaces=["shared", "personal", "e2e-test"],
+    class McpAuthMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            key_info = _ks_validate(_mcp_key_from_request(request))
+            if key_info is None:
+                env_key = os.environ.get("FERRITE_API_KEY", "")
+                keys_db = os.environ.get("FERRITE_KEYS_DB", "")
+                if not env_key and not keys_db:
+                    key_info = SimpleNamespace(
+                        key_id="dev", agent_name="dev",
+                        scopes=["read", "write", "ingest", "admin"],
+                        namespaces=["shared", "personal", "e2e-test"],
+                    )
+            if key_info is None:
+                return _JSONResponse(
+                    {"detail": "Invalid or missing API key"}, status_code=401
                 )
-        if key_info is None:
-            return _JSONResponse(
-                {"detail": "Invalid or missing API key"},
-                status_code=401,
-            )
-        # Provenance stamping (§6.4): identity travels with the request so
-        # MCP tool handlers can attribute writes to the caller.
-        request.state.key_info = key_info
-        return await call_next(request)
+            request.state.key_info = key_info
+            return await call_next(request)
 
     app = Starlette(
-        routes=[
-            Route("/mcp/", handle_mcp, methods=["GET", "POST", "DELETE"]),
-        ],
+        routes=[Route("/mcp/", handle_mcp, methods=["GET", "POST", "DELETE"])],
     )
-    app.add_middleware(BaseHTTPMiddleware, dispatch=mcp_auth_middleware)
+    app.add_middleware(McpAuthMiddleware)
 
-    # Wire the MCP server to the transport in background
-    async def run_mcp_server():
-        async with transport.connect() as (read_stream, write_stream):
-            await server.run(
-                read_stream,
-                write_stream,
-                server.create_initialization_options(),
-            )
-
-    import asyncio
-    asyncio.create_task(run_mcp_server())
-
-    uvicorn.run(app, host=host, port=port)
+    config = uvicorn.Config(app, host=host, port=port, timeout_keep_alive=5)
+    uvicorn.Server(config).run()
 
 
 if __name__ == "__main__":
+    import argparse
     import asyncio
     import sys
 
     if "--http" in sys.argv:
         # HTTP transport mode
-        asyncio.run(main_http())
+        ap = argparse.ArgumentParser()
+        ap.add_argument("--http", action="store_true")
+        ap.add_argument("--host", default="0.0.0.0")
+        ap.add_argument("--port", type=int, default=8002)
+        args = ap.parse_args()
+        asyncio.run(main_http(host=args.host, port=args.port))
     else:
         # Default: stdio transport
         asyncio.run(main_stdio())

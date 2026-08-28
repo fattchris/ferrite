@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "ferrite": {
-      "url": "http://localhost:8000/mcp",
+      "url": "http://localhost:8002/mcp/",
       "headers": {
         "Authorization": "Bearer ${FERRITE_API_KEY}"
       },
