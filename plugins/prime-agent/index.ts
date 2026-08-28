@@ -15,6 +15,10 @@
  *   FERRITE_AUTO_INGEST "false" disables session-end ingest (default on)
  *   FERRITE_MIN_CHARS   skip sessions shorter than this (default 200)
  *   FERRITE_DEBUG       "1" logs each ingest to ~/.ferrite/ingest-debug.log
+ *   FERRITE_PREINJECT   "false" disables pre-inference recall (default on)
+ *   FERRITE_INJECT_LIMIT   max facts injected per prompt (default 5)
+ *   FERRITE_INJECT_MIN_SCORE  min relevance score (default 0 = server decides)
+ *   FERRITE_MCP_URL     default http://100.90.179.92:8002/mcp/
  *
  * Install (Prime Agent):
  *   ~/.prime/agent/extensions/ferrite/index.ts
@@ -33,8 +37,12 @@ export interface FerritePluginConfig {
 
 const DEFAULTS = {
   ferriteUrl: process.env.FERRITE_URL ?? "http://100.90.179.92:8001",
+  mcpUrl: process.env.FERRITE_MCP_URL ?? "http://100.90.179.92:8002/mcp/",
   apiKeyEnv: "FERRITE_API_KEY",
   autoIngest: process.env.FERRITE_AUTO_INGEST !== "false",
+  preInject: process.env.FERRITE_PREINJECT !== "false",
+  injectLimit: Number(process.env.FERRITE_INJECT_LIMIT ?? 5) || 5,
+  injectMinScore: Number(process.env.FERRITE_INJECT_MIN_SCORE ?? 0),
   namespace: "shared",
   minChars: Number(process.env.FERRITE_MIN_CHARS ?? 10) || 10,
 };
@@ -165,6 +173,83 @@ function textOf(content: unknown): string {
     .join("\n");
 }
 
+// ── Pre-inference recall ────────────────────────────────────────
+// Before the agent loop runs, search Ferrite with the user's prompt and
+// inject relevant facts into the conversation — the LLM starts with
+// context instead of spending tool calls rediscovering it.
+
+let mcpSessionId: string | null = null;
+
+async function mcpCall(method: string, params?: any, retry = true): Promise<any> {
+  const body: any = { jsonrpc: "2.0", id: Date.now(), method };
+  if (params !== undefined) body.params = params;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json, text/event-stream",
+  };
+  const key = process.env[DEFAULTS.apiKeyEnv];
+  if (key) headers.Authorization = `Bearer ${key}`;
+  if (mcpSessionId) headers["mcp-session-id"] = mcpSessionId;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 5000);
+  let res: Response;
+  try {
+    res = await fetch(DEFAULTS.mcpUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+  const sid = res.headers.get("mcp-session-id");
+  if (sid) mcpSessionId = sid;
+  if (res.status === 404 && retry) {
+    mcpSessionId = null; // session expired — re-initialize once
+    await mcpInit();
+    return mcpCall(method, params, false);
+  }
+  if (!res.ok) throw new Error(`ferrite MCP HTTP ${res.status}`);
+
+  const text = await res.text();
+  if (method.startsWith("notifications/") || !text.trim()) return null;
+  let payload: any = null;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("data:")) payload = JSON.parse(line.slice(5).trim());
+  }
+  if (payload === null) payload = JSON.parse(text);
+  if (payload?.error) throw new Error(payload.error.message ?? "ferrite MCP error");
+  return payload;
+}
+
+async function mcpInit(): Promise<void> {
+  const call = (m: string, p?: any) => mcpCall(m, p, false);
+  await call("initialize", {
+    protocolVersion: "2024-11-05",
+    capabilities: {},
+    clientInfo: { name: "ferrite-prime-agent-extension", version: "1.0" },
+  });
+  await call("notifications/initialized", {});
+}
+
+async function ferriteRecall(prompt: string): Promise<Array<{ statement: string; score: number }>> {
+  if (!mcpSessionId) await mcpInit();
+  const r = await mcpCall("tools/call", {
+    name: "ferrite_inject",
+    arguments: { text: prompt.slice(0, 2000) },
+  });
+  const raw = r?.result?.content?.[0]?.text;
+  if (!raw) return [];
+  const parsed = JSON.parse(raw);
+  const results: any[] = Array.isArray(parsed?.results) ? parsed.results : [];
+  return results
+    .filter((x) => typeof x?.statement === "string" && x.score >= DEFAULTS.injectMinScore)
+    .slice(0, DEFAULTS.injectLimit)
+    .map((x) => ({ statement: x.statement, score: Number(x.score) || 0 }));
+}
+
 /**
  * Prime Agent extension entry point.
  *
@@ -178,6 +263,30 @@ function textOf(content: unknown): string {
  */
 export default function (pi: ExtensionAPI) {
   const plugin = createFerritePlugin({});
+
+  pi.on("before_agent_start", async (event) => {
+    if (!DEFAULTS.preInject) return;
+    const prompt = (event.prompt ?? "").trim();
+    if (prompt.length < 10) return;
+    try {
+      const facts = await ferriteRecall(prompt);
+      if (facts.length === 0) return;
+      debugLog(`recall prompt=${prompt.length}ch injected=${facts.length} facts`);
+      return {
+        message: {
+          customType: "ferrite-recall",
+          content:
+            "[ferrite recall — facts auto-retrieved from the shared knowledge graph for this prompt]\n" +
+            facts.map((f) => `- ${f.statement}`).join("\n") +
+            "\n[Use as background context; verify before acting on anything critical.]",
+          display: true,
+        },
+      };
+    } catch (e: any) {
+      debugLog(`recall failed: ${e?.message ?? e}`);
+      return; // never block the prompt on recall failures
+    }
+  });
 
   let pendingUserText = "";
   let pendingUserTs: string | undefined;

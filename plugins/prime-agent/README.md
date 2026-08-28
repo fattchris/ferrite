@@ -38,7 +38,24 @@ Two pieces:
    | `FERRITE_URL` | `http://100.90.179.92:8001` | REST endpoint (tailnet hub) |
    | `FERRITE_AUTO_INGEST` | `true` | `"false"` disables auto-ingest |
    | `FERRITE_MIN_CHARS` | `10` | skip tiny/noise episodes |
+| `FERRITE_PREINJECT` | `true` | pre-inference recall via `ferrite_inject` |
+| `FERRITE_INJECT_LIMIT` | `5` | max facts injected per prompt |
+| `FERRITE_MCP_URL` | hub `:8002/mcp/` | MCP endpoint for recall |
    | `FERRITE_DEBUG` | off | `1` logs to `~/.ferrite/ingest-debug.log` |
+
+3. **Pre-inference recall (this extension)** — on `before_agent_start` the
+   extension calls the `ferrite_inject` MCP tool with your prompt and
+   injects the returned facts as a session message *before the first LLM
+   call* — same pattern as the Hermes plugin. The model starts with
+   relevant context instead of spending tool calls rediscovering it.
+
+   - fires on every user prompt (>= 10 chars); fails open (errors are
+     logged and skipped — recall never blocks the prompt)
+   - relevance decisions are server-side (`ferrite_inject`); the extension
+     formats and injects up to `FERRITE_INJECT_LIMIT` facts
+   - injected messages carry `customType: "ferrite-recall"`, visible in
+     the session (`display: true`)
+   - `FERRITE_PREINJECT=false` disables it entirely
 
 Self-install: agents fetch `GET http://100.90.179.92:8001/self-install` for
 the full walkthrough (key registration via 1Password, verification steps).
