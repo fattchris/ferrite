@@ -1,10 +1,10 @@
 /**
  * Ferrite Plugin for Prime Agent
  * ======================================
- * Session lifecycle bridge to Ferrite: on session end, POSTs the
- * transcript to Ferrite /store so every conversation lands in the
- * knowledge graph with correct provenance (stamped server-side from
- * the scoped FERRITE_API_KEY).
+ * Turn-level bridge to Ferrite: every completed turn is POSTed to
+ * Ferrite /store in real time, so facts become queryable by other
+ * agents within minutes — long sessions share knowledge as they run.
+ * Provenance is stamped server-side from the scoped FERRITE_API_KEY.
  *
  * MCP tools (live graph queries) come from ~/.prime/agent/settings.json
  * mcpServers.ferrite — see README.md in this directory.
@@ -36,7 +36,7 @@ const DEFAULTS = {
   apiKeyEnv: "FERRITE_API_KEY",
   autoIngest: process.env.FERRITE_AUTO_INGEST !== "false",
   namespace: "shared",
-  minChars: Number(process.env.FERRITE_MIN_CHARS ?? 200) || 200,
+  minChars: Number(process.env.FERRITE_MIN_CHARS ?? 10) || 10,
 };
 
 interface EpisodeMessage {
@@ -105,12 +105,18 @@ export function createFerritePlugin(userCfg: FerritePluginConfig = {}) {
     /** Called by harness after each exchange (turn-level hook if available). */
     async onTurn(sessionId: string, user: string, assistant: string, ts?: string) {
       if (!cfg.autoIngest) return;
-      return storeTurn(cfg, sessionId, {
+      if ((user.length + assistant.length) < cfg.minChars) {
+        debugLog(`onTurn session=${sessionId} skipped: ${user.length + assistant.length} chars < min ${cfg.minChars}`);
+        return null;
+      }
+      const r = await storeTurn(cfg, sessionId, {
         role: "user",
         content: user.slice(0, 8000),
         assistant: assistant.slice(0, 8000),
         ts,
       });
+      debugLog(`onTurn session=${sessionId} user=${user.length}ch assistant=${assistant.length}ch -> ${r ? "stored" : "skipped/failed"}`);
+      return r;
     },
 
     /** Called on session end with the full transcript. */
@@ -161,38 +167,56 @@ function textOf(content: unknown): string {
 
 /**
  * Prime Agent extension entry point.
- * Wires session lifecycle events to the Ferrite plugin above.
+ *
+ * Real-time ingestion: every completed turn with text is POSTed to Ferrite
+ * /store immediately, so agents on other machines can query fresh facts
+ * within minutes — no waiting for session end. The user prompt is read
+ * from the session entries (robust across resume/reload) and held until a
+ * turn produces assistant text, so each episode carries the prompt together
+ * with its answer. Continuation turns (tool loops, follow-ups) are sent as
+ * assistant-only episodes.
  */
 export default function (pi: ExtensionAPI) {
   const plugin = createFerritePlugin({});
 
-  pi.on("session_shutdown", async (event, ctx) => {
-    // Hot-reload keeps the session alive — ingesting here would duplicate.
-    if (event.reason === "reload") return;
+  let pendingUserText = "";
+  let pendingUserTs: string | undefined;
+  let lastSentUserEntryId: string | null = null;
 
-    let entries: any[] = [];
+  pi.on("turn_end", async (event, ctx) => {
+    const assistantText = textOf(event?.message?.content).trim();
+
+    // Newest user entry we have not ingested yet (by entry id).
+    let userText = "";
+    let userTs: string | undefined;
+    let userEntryId: string | null = null;
     try {
-      entries = ctx.sessionManager.getEntries() as any[];
-    } catch {
-      return;
-    }
-
-    const transcript: EpisodeMessage[] = [];
-    for (const e of entries) {
-      const msg = e?.message;
-      if (!msg?.role) continue;
-      if (msg.role === "user" || msg.role === "assistant") {
-        const text = textOf(msg.content).trim();
-        if (text) {
-          transcript.push({
-            role: msg.role,
-            content: text,
-            ts: e.timestamp ? new Date(e.timestamp).toISOString() : undefined,
-          });
+      const entries = ctx.sessionManager.getEntries() as any[];
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const msg = entries[i]?.message;
+        if (msg?.role === "user") {
+          const t = textOf(msg.content).trim();
+          const id = entries[i]?.id ?? null;
+          if (t && id !== null && id !== lastSentUserEntryId) {
+            userText = t;
+            userTs = entries[i].timestamp ? new Date(entries[i].timestamp).toISOString() : undefined;
+            userEntryId = id;
+          }
+          break; // only the most recent user entry is relevant
         }
       }
+    } catch {
+      /* fall back to pendingUserText */
     }
-    if (transcript.length === 0) return;
+
+    if (userText) {
+      pendingUserText = userText;
+      pendingUserTs = userTs;
+    }
+
+    // Tool-only turns carry no text yet — hold the prompt for a later turn
+    // so each episode keeps the prompt together with its answer.
+    if (!assistantText) return;
 
     const file = ctx.sessionManager.getSessionFile?.();
     const sessionId = file
@@ -200,9 +224,14 @@ export default function (pi: ExtensionAPI) {
       : "unknown";
 
     try {
-      await plugin.onSessionEnd(sessionId, transcript);
+      await plugin.onTurn(sessionId, pendingUserText, assistantText, pendingUserTs);
     } catch (e: any) {
       if (ctx.hasUI) ctx.ui.notify(`ferrite ingest error: ${e?.message ?? e}`, "error");
+      return; // keep pending state so a later turn retries the prompt
     }
+
+    if (userEntryId !== null) lastSentUserEntryId = userEntryId;
+    pendingUserText = "";
+    pendingUserTs = undefined;
   });
 }

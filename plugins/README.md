@@ -11,7 +11,7 @@ Plugin integrations for each AI agent harness to connect to Ferrite.
 | Codex | 🟡 MCP server ready; config.toml stub needs updating |
 | OMP | 🔴 stub — TS plugin API TBD |
 | Pi | 🔴 stub — same as OMP |
-| Prime Agent | ✅ **FUNCTIONAL** — MCP via settings.json + session_shutdown auto-ingest extension (index.ts) |
+| Prime Agent | ✅ **FUNCTIONAL** — MCP via settings.json + real-time turn-level ingest (index.ts) |
 
 Auth model: every agent gets its OWN scoped API key (POST /keys, admin-gated)
 with a distinct agent_name. Provenance is stamped server-side from the key —
@@ -39,7 +39,7 @@ plugins/
 │   └── index.ts               # TS plugin stub (same as OMP)
 └── prime-agent/               # WORKING — canonical plugin
     ├── .mcp.json              # MCP server config (hub URL)
-    └── index.ts               # session_shutdown auto-ingest extension
+    └── index.ts               # turn_end real-time ingest extension
 ```
 
 ## Integration Matrix
@@ -52,7 +52,7 @@ plugins/
 | Codex CLI   | ✅ config | ⚠️ Wrapper      | config.toml + wrapper  |
 | OMP         | ✅ .mcp   | ⚠️ Hindsight API| .mcp.json + TS plugin  |
 | Pi          | ✅ .mcp   | ⚠️ Same as OMP  | .mcp.json + TS plugin  |
-| Prime Agent | ✅ settings.json | ✅ session_shutdown | index.ts extension |
+| Prime Agent | ✅ settings.json | ✅ turn_end (real-time) | index.ts extension |
 
 ## Environment Variables
 
