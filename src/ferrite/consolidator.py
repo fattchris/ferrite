@@ -28,6 +28,7 @@ Staleness scoping (A7):
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -512,6 +513,31 @@ def consolidate_group(
         dequeue_consolidation(redis_client, group_key)
 
     return obs_id
+
+
+def run_consolidation_worker(
+    driver: Driver,
+    llm_client,
+    redis_client,
+    stop_event: threading.Event,
+    poll_interval: float = 30.0,
+):
+    """Background consolidation consumer (A16).
+
+    Drains the pending_consolidation set, then polls. Runs alongside the
+    ingestion worker — consolidation is cheaper than extraction so a single
+    loop keeps up easily.
+    """
+    logger.info("Consolidation worker started")
+    while not stop_event.is_set():
+        try:
+            count = consolidate_pending(driver, llm_client, redis_client)
+            if count == 0:
+                stop_event.wait(poll_interval)
+        except Exception as e:
+            logger.error("Consolidation worker error: %s", e, exc_info=True)
+            stop_event.wait(15)
+    logger.info("Consolidation worker stopped")
 
 
 def consolidate_pending(

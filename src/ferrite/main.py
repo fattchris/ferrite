@@ -52,12 +52,22 @@ def main():
         neo4j_password=settings.NEO4J_PASSWORD,
     )
 
-    # Start background worker
+    # Start background workers: ingestion + consolidation (A16)
     stop_event = threading.Event()
     worker_thread = threading.Thread(
         target=run_worker, args=(pipeline, stop_event), daemon=True
     )
     worker_thread.start()
+
+    from .consolidator import run_consolidation_worker
+
+    llm_client = pipeline.llm_client
+    cons_thread = threading.Thread(
+        target=run_consolidation_worker,
+        args=(pipeline.driver, llm_client, pipeline.redis_client, stop_event),
+        daemon=True,
+    )
+    cons_thread.start()
 
     # Create and run FastAPI app
     app = create_app(pipeline=pipeline)

@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 SCHEMA_DDL: list[str] = [
     # Uniqueness constraints
     "CREATE CONSTRAINT fact_id_unique IF NOT EXISTS FOR (f:Fact) REQUIRE f.id IS UNIQUE",
+    "CREATE INDEX fact_statement_hash_idx IF NOT EXISTS FOR (f:Fact) ON (f.statement_hash)",
     "CREATE CONSTRAINT entity_id_unique IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE",
     "CREATE CONSTRAINT alias_norm_unique IF NOT EXISTS FOR (a:Alias) REQUIRE a.norm IS UNIQUE",
     "CREATE CONSTRAINT episode_id_unique IF NOT EXISTS FOR (ep:Episode) REQUIRE ep.id IS UNIQUE",

@@ -14,24 +14,24 @@ Usage (standalone):
 
 Agent Plugins 1.0.0 mcp.json:
   {
-    "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
     "mcpServers": {
       "ferrite": {
         "type": "stdio",
         "command": "uv",
         "args": ["run", "--project", "${PLUGIN_ROOT}", "python", "-m", "ferrite.mcp_server"],
-        "env": {
-          "NEO4J_URI": "bolt://localhost:7687",
-          "NEO4J_USER": "neo4j",
-          "NEO4J_PASSWORD": "ferrite123",
-          "REDIS_URL": "redis://localhost:6379",
-          "LITELLM_BASE_URL": "http://localhost:4000/v1",
-          "LITELLM_API_KEY": "sk-litellm-...",
-          "LLM_MODEL": "glm-5.2"
-        }
+        "env": { "FERRITE_API_KEY": "${FERRITE_API_KEY}" }
+      },
+      "ferrite-http": {
+        "type": "http",
+        "url": "http://localhost:8002/mcp/",
+        "headers": { "Authorization": "Bearer ${FERRITE_API_KEY}" }
       }
     }
   }
+
+Credentials: agents authenticate with a scoped Ferrite API key (created via
+POST /keys with admin scope). Raw Neo4j/Redis/LiteLLM creds are NEVER exposed
+to client agents. Provenance is stamped server-side from the key.
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ import json
 import logging
 import os
 import urllib.request
+from types import SimpleNamespace
 from typing import Any, Callable
 
 from mcp import types
@@ -237,6 +238,53 @@ TOOLS = [
         inputSchema={
             "type": "object",
             "properties": {},
+        },
+    ),
+    types.Tool(
+        name="ferrite_assert",
+        description=(
+            "Directly assert known facts as triples into the knowledge graph. "
+            "ZERO LLM extraction — use when the model already knows the fact. "
+            "Predicates are validated against the predicate vocabulary."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "facts": {
+                    "type": "array",
+                    "description": "Facts to assert",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "subject": {"type": "string"},
+                            "predicate": {
+                                "type": "string",
+                                "description": "Predicate from Ferrite vocab (e.g. works_at, uses, version_is)",
+                            },
+                            "object": {"type": "string"},
+                            "object_type": {
+                                "type": "string",
+                                "description": "Optional entity type of object",
+                            },
+                            "certainty": {
+                                "type": "number",
+                                "description": "0.0-1.0, default 1.0",
+                            },
+                        },
+                        "required": ["subject", "predicate", "object"],
+                    },
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Optional context text for the episode",
+                },
+                "namespace": {
+                    "type": "string",
+                    "description": "Namespace (default shared)",
+                    "default": "shared",
+                },
+            },
+            "required": ["facts"],
         },
     ),
     types.Tool(
@@ -495,6 +543,68 @@ def _handle_ingest(args: dict) -> list[types.TextContent]:
     return _json_response(_ingest(content, source, content_type))
 
 
+def _handle_assert(args: dict) -> list[types.TextContent]:
+    """Direct assertion: triples -> graph with no LLM. Reuses /assert pipeline."""
+    facts = args.get("facts", [])
+    if not facts:
+        return _json_response({"error": "no facts supplied"})
+    content = args.get("content") or ""
+    namespace = args.get("namespace", "shared")
+
+    from .canonicalize import resolve_entity
+    from .models import Episode, ExtractedEntity, ExtractedFact
+
+    pipe = _get_pipeline()
+    import uuid as _uuid
+    from datetime import datetime
+
+    entities = [
+        ExtractedEntity(name=f["object"], type=f.get("object_type") or "", summary="")
+        for f in facts if f.get("object")
+    ]
+    extracted = [
+        ExtractedFact(
+            subject=f["subject"],
+            predicate=f["predicate"],
+            object=f["object"],
+            object_type=f.get("object_type") or "",
+            certainty=f.get("certainty", 1.0),
+            assertion_source="user",
+        )
+        for f in facts
+    ]
+    ep = Episode(
+        id=str(_uuid.uuid4()),
+        content=content or "\n".join(f"{f['subject']} {f['predicate']} {f['object']}" for f in facts),
+        content_type="structured",
+        source={"agent": "mcp", "kind": "assert"},
+        namespace=namespace,
+        recorded_at=datetime.now(),
+    )
+    entity_cache = {}
+    for ent in entities:
+        entity = resolve_entity(pipe.driver, ent.name, pipe.embedding_func,
+                                entity_type=ent.type, summary=ent.summary)
+        if entity is not None:
+            entity_cache[ent.name] = entity
+    for f in extracted:
+        for name in ([f.subject] + ([f.object] if f.object_type == "entity" else [])):
+            if name not in entity_cache:
+                e = resolve_entity(pipe.driver, name, pipe.embedding_func)
+                if e is not None:
+                    entity_cache[name] = e
+
+    from .assertion_gate import assertion_gate
+    written = 0
+    with pipe.driver.session() as session:
+        for fact_data in extracted:
+            if not assertion_gate(fact_data.model_dump()):
+                continue
+            pipe._write_fact_with_temporal(ep, fact_data, entity_cache, session)
+            written += 1
+    return _json_response({"episode_id": ep.id, "facts_written": written})
+
+
 def _handle_tempr_search(args: dict) -> list[types.TextContent]:
     """TEMPR multi-strategy retrieval."""
     from .tempr import tempr_search
@@ -677,6 +787,7 @@ TOOL_HANDLERS = {
     "ferrite_inject": _protected(_handle_inject),
     "ferrite_stats": _protected(_handle_stats),
     "ferrite_ingest": _protected(_handle_ingest),
+    "ferrite_assert": _protected(_handle_assert),
     "ferrite_tempr_search": _protected(_handle_tempr_search),
     "ferrite_mental_model": _protected(_handle_mental_model),
     "ferrite_consolidate": _protected(_handle_consolidate),
@@ -837,6 +948,7 @@ async def main_http(host: str = "0.0.0.0", port: int = 8002):
     """
     import uvicorn
     from starlette.applications import Starlette
+    from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.routing import Route
 
     logging.basicConfig(level=logging.INFO)
@@ -851,11 +963,46 @@ async def main_http(host: str = "0.0.0.0", port: int = 8002):
             request.scope, request.receive, request._send
         )
 
+    # --- Auth (§6.1): same key store as the REST API. Token via
+    # Authorization: Bearer / X-API-Key. Falls back to dev mode when no
+    # FERRITE_API_KEY and no keys DB exist (matches api.py behavior).
+    from .key_store import validate_token as _ks_validate
+    from starlette.responses import JSONResponse as _JSONResponse
+
+    def _mcp_key_from_request(request):
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            return auth[7:]
+        return request.headers.get("x-api-key", "")
+
+    async def mcp_auth_middleware(request, call_next):
+        key_info = _ks_validate(_mcp_key_from_request(request))
+        if key_info is None:
+            env_key = os.environ.get("FERRITE_API_KEY", "")
+            keys_db = os.environ.get("FERRITE_KEYS_DB", "")
+            if not env_key and not keys_db:
+                # Dev mode: no keys configured at all
+                key_info = SimpleNamespace(
+                    key_id="dev", agent_name="dev",
+                    scopes=["read", "write", "ingest", "admin"],
+                    namespaces=["shared", "personal", "e2e-test"],
+                )
+        if key_info is None:
+            return _JSONResponse(
+                {"detail": "Invalid or missing API key"},
+                status_code=401,
+            )
+        # Provenance stamping (§6.4): identity travels with the request so
+        # MCP tool handlers can attribute writes to the caller.
+        request.state.key_info = key_info
+        return await call_next(request)
+
     app = Starlette(
         routes=[
             Route("/mcp/", handle_mcp, methods=["GET", "POST", "DELETE"]),
-        ]
+        ],
     )
+    app.add_middleware(BaseHTTPMiddleware, dispatch=mcp_auth_middleware)
 
     # Wire the MCP server to the transport in background
     async def run_mcp_server():

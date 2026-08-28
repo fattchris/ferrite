@@ -350,10 +350,17 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             from .metrics import get_metrics
             from .models import Episode
 
+            # Provenance stamping (§6.4): agent identity comes from the API key,
+            # never from the client's self-reported source dict.
+            stamped_source = dict(req.source or {})
+            key_info = getattr(request.state, "key_info", None)
+            if key_info:
+                stamped_source["agent"] = key_info.agent_name
+                stamped_source["key_id"] = key_info.key_id
             episode = Episode(
                 content=req.content,
                 content_type=req.content_type,
-                source=req.source,
+                source=stamped_source,
                 namespace=req.namespace or settings.NAMESPACE_DEFAULT,
             )
             episode_id = pipeline.enqueue(episode)
@@ -414,10 +421,16 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             if not facts and not entities:
                 raise HTTPException(status_code=422, detail="No facts or entities supplied")
 
+            # Provenance stamping (§6.4): identity from key, not client claim.
+            stamped_source = dict(req.source or {})
+            key_info = getattr(request.state, "key_info", None)
+            if key_info:
+                stamped_source["agent"] = key_info.agent_name
+                stamped_source["key_id"] = key_info.key_id
             episode = Episode(
                 content=req.content or "\n".join(f"{f.subject} {f.predicate} {f.object}" for f in facts),
                 content_type="structured",
-                source=req.source or {"agent": "api"},
+                source=stamped_source or {"agent": "api"},
                 namespace=req.namespace or settings.NAMESPACE_DEFAULT,
             )
 
