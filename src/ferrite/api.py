@@ -302,11 +302,20 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         agent_name = body.get("agent_name", "")
         scopes = body.get("scopes", ["read", "write"])
         namespaces = body.get("namespaces", ["shared"])
+        rotate_token = body.get("rotate_token")
 
         if not agent_name:
             raise HTTPException(status_code=400, detail="agent_name required")
 
-        return ks_create_key(agent_name, scopes=scopes, namespaces=namespaces)
+        try:
+            return ks_create_key(
+                agent_name, scopes=scopes, namespaces=namespaces,
+                rotate_token=rotate_token,
+            )
+        except ValueError as e:
+            # Provenance guard: agent_name already registered. 409 Conflict with
+            # a self-explanatory message so the requesting agent can self-correct.
+            raise HTTPException(status_code=409, detail=str(e))
 
     @app.get("/keys")
     async def list_api_keys(active_only: bool = True):

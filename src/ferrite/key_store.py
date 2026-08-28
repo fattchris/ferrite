@@ -71,13 +71,41 @@ def create_key(
     scopes: list[str] | None = None,
     namespaces: list[str] | None = None,
     db_path: Optional[str] = None,
+    rotate_token: Optional[str] = None,
 ) -> dict:
     """Create a new API key. Returns {key_id, token, agent_name, scopes, namespaces}.
 
     The token is returned ONCE — only the hash is stored.
+
+    Provenance guard (§ identity model): `agent_name` is the durable identity
+    join key, so two different agents must never share one. If an ACTIVE key
+    already exists for `agent_name`, the request is rejected UNLESS the caller
+    presents a valid current token for that same agent via `rotate_token`
+    (legitimate key rotation keeps identity, replaces the credential).
     """
     init_db(db_path)
     path = db_path or _get_db_path()
+
+    active = [
+        k for k in list_keys(active_only=True, db_path=path)
+        if k["agent_name"] == agent_name
+    ]
+    if active:
+        rotated_ok = False
+        if rotate_token:
+            info = validate_token(rotate_token, db_path=path)
+            rotated_ok = info is not None and info.agent_name == agent_name
+        if not rotated_ok:
+            raise ValueError(
+                f"agent_name '{agent_name}' is already registered with "
+                f"{len(active)} active key(s). Two different agents must never "
+                f"share an identity — provenance would be ambiguous. Options: "
+                f"(1) pick a different agent_name that describes YOUR agent "
+                f"(e.g. 'omp-{uuid.uuid4().hex[:6]}' or 'omp-work'), "
+                f"(2) if you ARE the rightful owner of this identity, pass your "
+                f"current valid token as rotate_token to rotate the key."
+            )
+
     key_id = str(uuid.uuid4())
     token = f"ferrite_{key_id.replace('-', '')}_{uuid.uuid4().hex[:16]}"
     key_hash = _hash_token(token)

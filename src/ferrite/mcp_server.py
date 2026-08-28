@@ -998,7 +998,8 @@ def main_http(host: str = "0.0.0.0", port: int = 8002):
         async def _send_with_session(scope, receive, send):
             async def send_wrapper(message):
                 if message.get("type") == "http.response.start":
-                    headers = list(message.get("headers", []))
+                    headers = [(k, v) for k, v in message.get("headers", [])
+                               if k.lower() != b"mcp-session-id"]
                     headers.append((b"mcp-session-id", sid.encode()))
                     message["headers"] = headers
                 await send(message)
