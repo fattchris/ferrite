@@ -264,11 +264,13 @@ TOOLS = [
                             "object": {"type": "string"},
                             "object_type": {
                                 "type": "string",
-                                "description": "Optional entity type of object",
+                                "enum": ["entity", "literal"],
+                                "description": "Kind of object; default entity",
                             },
                             "certainty": {
-                                "type": "number",
-                                "description": "0.0-1.0, default 1.0",
+                                "type": "string",
+                                "enum": ["stated", "inferred", "speculative"],
+                                "description": "Epistemic certainty label; default stated",
                             },
                         },
                         "required": ["subject", "predicate", "object"],
@@ -594,7 +596,7 @@ def _handle_assert(args: dict) -> list[types.TextContent]:
                 if e is not None:
                     entity_cache[name] = e
 
-    from .assertion_gate import assertion_gate
+    from .quality_gates import assertion_gate
     written = 0
     with pipe.driver.session() as session:
         for fact_data in extracted:
