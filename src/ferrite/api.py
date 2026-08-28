@@ -65,7 +65,7 @@ _PUBLIC_ENDPOINTS = {
     "/", "/health", "/metrics", "/metrics/prometheus",
     "/circuit-breaker", "/circuit-breaker/reset",
     "/install", "/install/generate-secrets", "/install/verify",
-    "/wiki",
+    "/wiki", "/self-install",
 }
 # Key management endpoints require admin scope.
 _ADMIN_ENDPOINTS = {"/keys", "/keys/{key_id}/revoke"}
@@ -974,6 +974,23 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
         if os.path.isfile(installer):
             return FileResponse(installer)
         return JSONResponse({"detail": "Installer not available"}, status_code=404)
+
+    @app.get("/self-install", include_in_schema=False)
+    async def self_install_prompt():
+        """Serve the agent self-install instructions (plain markdown).
+
+        This is the bootstrap answer to the catch-22: an agent that knows only
+        the server URL can fetch its own onboarding instructions here. No auth —
+        the doc contains no secrets; every credential comes from /keys.
+        """
+        doc = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "plugins", "SELF_INSTALL_PROMPT.md",
+        )
+        if os.path.isfile(doc):
+            with open(doc) as f:
+                return PlainTextResponse(f.read(), media_type="text/markdown")
+        return JSONResponse({"detail": "Self-install doc not found"}, status_code=404)
 
     @app.get("/wiki", include_in_schema=False)
     async def wiki_page():

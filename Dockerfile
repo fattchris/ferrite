@@ -13,6 +13,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY eval/ ./eval/
+COPY plugins/SELF_INSTALL_PROMPT.md ./plugins/SELF_INSTALL_PROMPT.md
 RUN uv sync --frozen --no-dev
 
 # Default env — override via docker-compose
