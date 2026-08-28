@@ -2,7 +2,7 @@
   "mcpServers": {
     "ferrite": {
       "type": "http",
-      "url": "http://localhost:8002/mcp/",
+      "url": "http://100.90.179.92:8002/mcp/",
       "bearerTokenEnvVar": "FERRITE_API_KEY"
     }
   }

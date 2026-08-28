@@ -1,38 +1,42 @@
 /**
  * Ferrite Plugin for Prime Agent
  * ======================================
- * Bridges OMP/Pi hindsight memory events + session lifecycle to Ferrite.
+ * Session lifecycle bridge to Ferrite: on session end, POSTs the
+ * transcript to Ferrite /store so every conversation lands in the
+ * knowledge graph with correct provenance (stamped server-side from
+ * the scoped FERRITE_API_KEY).
  *
- * Features:
- *  1. MCP tools come from .mcp.json (ferrite server at :8002/mcp/) — this
- *     plugin handles what MCP cannot: session lifecycle + auto-ingest.
- *  2. On session end, POSTs the transcript to Ferrite /store so every
- *     conversation lands in the knowledge graph with correct provenance.
- *  3. Provenance is stamped server-side from the scoped FERRITE_API_KEY.
+ * MCP tools (live graph queries) come from ~/.prime/agent/settings.json
+ * mcpServers.ferrite — see README.md in this directory.
  *
  * Env:
- *   FERRITE_API_KEY  scoped key (required) — create via POST /keys
- *   FERRITE_URL      default http://localhost:8001
- *   FERRITE_AUTO_INGEST  "false" disables session-end ingest (default on)
+ *   FERRITE_API_KEY     scoped key (required) — create via POST /keys
+ *   FERRITE_URL         default http://100.90.179.92:8001 (tailnet hub)
+ *   FERRITE_AUTO_INGEST "false" disables session-end ingest (default on)
+ *   FERRITE_MIN_CHARS   skip sessions shorter than this (default 200)
+ *   FERRITE_DEBUG       "1" logs each ingest to ~/.ferrite/ingest-debug.log
  *
  * Install (Prime Agent):
  *   ~/.prime/agent/extensions/ferrite/index.ts
- *   MCP tools come from ~/.prime/agent/settings.json mcpServers.ferrite (bearerTokenEnvVar).
- *   Set FERRITE_API_KEY in the shell profile; this extension adds session-end ingest.
+ *   (this file is the extension entry point; auto-discovered, no flags needed)
  */
+
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export interface FerritePluginConfig {
   ferriteUrl?: string;
   apiKeyEnv?: string;
   autoIngest?: boolean;
   namespace?: string;
+  minChars?: number;
 }
 
 const DEFAULTS = {
-  ferriteUrl: process.env.FERRITE_URL ?? "http://localhost:8001",
+  ferriteUrl: process.env.FERRITE_URL ?? "http://100.90.179.92:8001",
   apiKeyEnv: "FERRITE_API_KEY",
   autoIngest: process.env.FERRITE_AUTO_INGEST !== "false",
   namespace: "shared",
+  minChars: Number(process.env.FERRITE_MIN_CHARS ?? 200) || 200,
 };
 
 interface EpisodeMessage {
@@ -40,6 +44,20 @@ interface EpisodeMessage {
   content: string;
   assistant?: string;
   ts?: string;
+}
+
+function debugLog(message: string): void {
+  if (process.env.FERRITE_DEBUG !== "1") return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require("fs");
+    fs.appendFileSync(
+      `${process.env.HOME}/.ferrite/ingest-debug.log`,
+      `${new Date().toISOString()} ${message}\n`,
+    );
+  } catch {
+    /* logging is best-effort */
+  }
 }
 
 async function storeTurn(
@@ -62,7 +80,7 @@ async function storeTurn(
       body: JSON.stringify({
         content: JSON.stringify([msg]),
         content_type: "json",
-        source: { kind: "session-sync", harness: "omp", session_id: sessionId },
+        source: { kind: "session-sync", harness: "prime-agent", session_id: sessionId },
         namespace: cfg.namespace,
       }),
     });
@@ -77,7 +95,7 @@ async function storeTurn(
   }
 }
 
-/** Public API expected by OMP/Pi plugin loader (contract per stub docs). */
+/** Factory also usable by OMP/Pi-style plugin loaders. */
 export function createFerritePlugin(userCfg: FerritePluginConfig = {}) {
   const cfg = { ...DEFAULTS, ...userCfg };
 
@@ -98,6 +116,11 @@ export function createFerritePlugin(userCfg: FerritePluginConfig = {}) {
     /** Called on session end with the full transcript. */
     async onSessionEnd(sessionId: string, transcript: EpisodeMessage[]) {
       if (!cfg.autoIngest) return { stored: 0 };
+      const contentLen = transcript.reduce((n, m) => n + (m.content?.length ?? 0), 0);
+      if (contentLen < cfg.minChars) {
+        debugLog(`onSessionEnd session=${sessionId} skipped: ${contentLen} chars < min ${cfg.minChars}`);
+        return { stored: 0 };
+      }
       let stored = 0;
       for (let i = 0; i < transcript.length; i += 2) {
         const pair = transcript.slice(i, i + 2);
@@ -111,6 +134,7 @@ export function createFerritePlugin(userCfg: FerritePluginConfig = {}) {
         });
         if (r) stored++;
       }
+      debugLog(`onSessionEnd session=${sessionId} turns=${transcript.length} stored=${stored}`);
       return { stored };
     },
 
@@ -126,4 +150,59 @@ export function createFerritePlugin(userCfg: FerritePluginConfig = {}) {
   };
 }
 
-export default createFerritePlugin;
+function textOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((b: any) => b?.type === "text" && typeof b.text === "string")
+    .map((b: any) => b.text)
+    .join("\n");
+}
+
+/**
+ * Prime Agent extension entry point.
+ * Wires session lifecycle events to the Ferrite plugin above.
+ */
+export default function (pi: ExtensionAPI) {
+  const plugin = createFerritePlugin({});
+
+  pi.on("session_shutdown", async (event, ctx) => {
+    // Hot-reload keeps the session alive — ingesting here would duplicate.
+    if (event.reason === "reload") return;
+
+    let entries: any[] = [];
+    try {
+      entries = ctx.sessionManager.getEntries() as any[];
+    } catch {
+      return;
+    }
+
+    const transcript: EpisodeMessage[] = [];
+    for (const e of entries) {
+      const msg = e?.message;
+      if (!msg?.role) continue;
+      if (msg.role === "user" || msg.role === "assistant") {
+        const text = textOf(msg.content).trim();
+        if (text) {
+          transcript.push({
+            role: msg.role,
+            content: text,
+            ts: e.timestamp ? new Date(e.timestamp).toISOString() : undefined,
+          });
+        }
+      }
+    }
+    if (transcript.length === 0) return;
+
+    const file = ctx.sessionManager.getSessionFile?.();
+    const sessionId = file
+      ? String(file).split("/").pop()?.replace(/\.jsonl$/, "") ?? "unknown"
+      : "unknown";
+
+    try {
+      await plugin.onSessionEnd(sessionId, transcript);
+    } catch (e: any) {
+      if (ctx.hasUI) ctx.ui.notify(`ferrite ingest error: ${e?.message ?? e}`, "error");
+    }
+  });
+}
