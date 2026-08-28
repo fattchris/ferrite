@@ -548,29 +548,46 @@ def _handle_ingest(args: dict) -> list[types.TextContent]:
 def _handle_assert(args: dict) -> list[types.TextContent]:
     """Direct assertion: triples -> graph with no LLM. Reuses /assert pipeline."""
     facts = args.get("facts", [])
-    if not facts:
+    if not facts or not isinstance(facts, list):
         return _json_response({"error": "no facts supplied"})
+    for f in facts:
+        if not isinstance(f, dict) or not f.get("subject") or not f.get("predicate") or not f.get("object"):
+            return _json_response({
+                "error": "invalid fact: each fact requires non-empty 'subject', 'predicate', and 'object' keys",
+            })
     content = args.get("content") or ""
     namespace = args.get("namespace", "shared")
 
     from .canonicalize import resolve_entity
     from .models import Episode, ExtractedEntity, ExtractedFact
 
+    def _norm_object_type(v):
+        return v if v in ("entity", "literal") else "entity"
+
+    def _norm_certainty(v):
+        return v if v in ("stated", "inferred", "speculative") else "stated"
+
     pipe = _get_pipeline()
     import uuid as _uuid
     from datetime import datetime
 
+    # Only materialize object entities for object_type == "entity"
     entities = [
-        ExtractedEntity(name=f["object"], type=f.get("object_type") or "", summary="")
-        for f in facts if f.get("object")
+        ExtractedEntity(
+            name=f["object"],
+            type=_norm_object_type(f.get("object_type")),
+            summary="",
+        )
+        for f in facts
+        if f.get("object") and _norm_object_type(f.get("object_type")) == "entity"
     ]
     extracted = [
         ExtractedFact(
             subject=f["subject"],
             predicate=f["predicate"],
             object=f["object"],
-            object_type=f.get("object_type") or "",
-            certainty=f.get("certainty", 1.0),
+            object_type=_norm_object_type(f.get("object_type")),
+            certainty=_norm_certainty(f.get("certainty")),
             assertion_source="user",
         )
         for f in facts
@@ -800,7 +817,12 @@ TOOL_HANDLERS = {
 
 # --- Server setup ---
 
-server = Server("ferrite")
+import importlib.metadata as _im
+try:
+    _FERRITE_VERSION = _im.version("ferrite")
+except Exception:
+    _FERRITE_VERSION = "0.1.0"
+server = Server("ferrite", version=_FERRITE_VERSION)
 
 
 async def _list_tools(ctx, params) -> types.ListToolsResult:
@@ -822,6 +844,18 @@ async def _call_tool(ctx, params) -> types.CallToolResult:
 
     try:
         content = handler(arguments)
+        # If a handler returned an error payload, surface it as isError so
+        # MCP clients don't treat failures as success.
+        if (
+            len(content) == 1
+            and isinstance(content[0], types.TextContent)
+        ):
+            try:
+                payload = json.loads(content[0].text)
+                if isinstance(payload, dict) and "error" in payload:
+                    return types.CallToolResult(content=content, isError=True)
+            except (json.JSONDecodeError, ValueError):
+                pass
         return types.CallToolResult(content=content)
     except Exception as e:
         logger.exception("Tool %s failed", name)
