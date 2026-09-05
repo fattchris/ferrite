@@ -24,7 +24,7 @@ from typing import Callable, Optional
 
 import redis
 
-from .canonicalize import resolve_entity
+from .canonicalize import normalize_name, resolve_entity
 from .db import close_driver, get_driver
 from .extractor import extract, normalize_literal
 from .models import Episode, ExtractedFact, FactBase
@@ -51,6 +51,7 @@ except ImportError as _e:
 logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "ferrite:ingestion:queue"
+WORKER_LAST_PROCESSED_KEY = "ferrite:ingestion:last_processed_at"
 EPISODE_KEY_PREFIX = "ferrite:episode:"
 FAILED_QUEUE_KEY = "ferrite:failed_queue"
 DEAD_LETTER_KEY = "ferrite:dead_letter"
@@ -212,6 +213,20 @@ class IngestionPipeline:
         """Return the number of episodes in the queue."""
         return self.redis_client.llen(QUEUE_KEY)
 
+    def get_worker_stats(self) -> dict:
+        """Worker liveness + throughput stats for /health.
+
+        - last_processed_at: epoch seconds of last successful episode
+        - failed_depth: episodes waiting on the retry queue
+        - dead_letter_depth: episodes that exhausted retries (manual action needed)
+        """
+        last = self.redis_client.get(WORKER_LAST_PROCESSED_KEY)
+        return {
+            "last_processed_at": float(last) if last else None,
+            "failed_depth": self.redis_client.llen(FAILED_QUEUE_KEY),
+            "dead_letter_depth": self.redis_client.llen(DEAD_LETTER_KEY),
+        }
+
     def process_next(self) -> Optional[str]:
         """Process the next episode in the queue. Returns episode_id or None."""
         episode_id = self.redis_client.rpop(QUEUE_KEY)
@@ -309,23 +324,43 @@ class IngestionPipeline:
             if extraction is None:
                 raise RuntimeError("Extraction returned None after retries")
 
-            # Pattern tier: run deterministic extractor; if it yields facts,
-            # use them INSTEAD of the LLM result (the LLM was only a fallback).
+            # Pattern tier: run deterministic extractor and MERGE with the LLM
+            # result. The pattern extractor only covers a small set of surface
+            # forms; replacing (not merging) silently dropped LLM facts the
+            # regexes can't express (e.g. "Bob is the CEO of Acme Corp." ->
+            # ceo_of lost when works_at matched). Pattern facts win on
+            # duplicates because they're deterministic.
             if _TIAGE_OK and verdict is not None and verdict.tier == "pattern":
                 try:
                     emb = self.embedding_func
                     pat_facts = extract_patterns(episode.content, emb, PREDICATE_VOCAB)
                     if pat_facts:
-                        names = {f.subject for f in pat_facts} | {
+                        pat_keys = {
+                            (normalize_name(f.subject), f.predicate, normalize_name(f.object))
+                            for f in pat_facts
+                        }
+                        llm_extra = [
+                            f for f in extraction.facts
+                            if (normalize_name(f.subject), f.predicate, normalize_name(f.object))
+                            not in pat_keys
+                        ]
+                        all_facts = pat_facts + llm_extra
+                        names = {f.subject for f in all_facts} | {
+                            f.object for f in all_facts if f.object_type == "entity"
+                        }
+                        pat_names = {f.subject for f in pat_facts} | {
                             f.object for f in pat_facts if f.object_type == "entity"
                         }
+                        # Keep LLM entities that carry LLM-only facts; pattern
+                        # entities come from the deterministic pass.
                         extraction.entities = [
                             e for e in extraction.entities if e.name in names
                         ] or [type(e)(name=n) for n in sorted(names)]
-                        extraction.facts = pat_facts
+                        extraction.facts = all_facts
                         logger.info(
                             f"Episode {episode.id}: pattern tier produced "
-                            f"{len(pat_facts)} facts — LLM extraction discarded"
+                            f"{len(pat_facts)} facts, merged with "
+                            f"{len(llm_extra)} LLM-only facts"
                         )
                         from .metrics import get_metrics
                         get_metrics().increment("ingestion_pattern_extracted")
@@ -395,6 +430,9 @@ class IngestionPipeline:
                 logger.debug("Consolidation enqueue failed: %s", e)
 
             logger.info(f"Completed processing episode {episode.id}")
+            # Worker heartbeat for /health (worker lag detection)
+            import time as _time
+            self.redis_client.set(WORKER_LAST_PROCESSED_KEY, repr(_time.time()))
 
         except Exception as e:
             # DLQ logic (F-5 fix): retry with backoff, then dead letter

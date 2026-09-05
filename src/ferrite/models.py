@@ -79,6 +79,7 @@ class HealthResponse(BaseModel):
     neo4j: str
     redis: str
     queue_depth: int
+    worker: dict = Field(default_factory=dict)
 
 
 # --- Issue 25: Typed extraction results ---

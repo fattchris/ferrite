@@ -48,7 +48,7 @@ NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "ferrite123")
 REDIS_URL = "redis://localhost:6379"
 LITELLM_BASE_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000/v1")
 LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "sk-litellm-cd2008b7d243eb3c14a96ef55f80f529")
-LITELLM_MODEL = "glm-5.2"
+LITELLM_MODEL = os.environ.get("LLM_MODEL", "glm-5.3")
 
 # --- Fixtures ---
 

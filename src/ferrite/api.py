@@ -713,16 +713,20 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
 
     @app.get("/health", response_model=HealthResponse)
     async def health():
-        """System health: Neo4j, Redis, queue depth."""
+        """System health: Neo4j, Redis, queue depth, worker liveness."""
+        import time as _time
+
         neo4j_status = "ok"
         redis_status = "ok"
         queue_depth = 0
+        worker: dict = {}
 
         if pipeline is None:
             return HealthResponse(
                 neo4j="unavailable",
                 redis="unavailable",
                 queue_depth=0,
+                worker={},
             )
 
         # Check Neo4j
@@ -733,10 +737,17 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             logger.warning(f"Neo4j health check failed: {e}")
             neo4j_status = "error"
 
-        # Check Redis
+        # Check Redis + worker stats
         try:
             pipeline.redis_client.ping()
             queue_depth = pipeline.get_queue_depth()
+            stats = pipeline.get_worker_stats()
+            worker = stats if isinstance(stats, dict) else {}
+            last = worker.get("last_processed_at")
+            if last is not None:
+                worker["seconds_since_processed"] = round(_time.time() - last, 1)
+            else:
+                worker["seconds_since_processed"] = None
         except Exception as e:
             logger.warning(f"Redis health check failed: {e}")
             redis_status = "error"
@@ -745,6 +756,7 @@ def create_app(pipeline: Optional[IngestionPipeline] = None) -> FastAPI:
             neo4j=neo4j_status,
             redis=redis_status,
             queue_depth=queue_depth,
+            worker=worker,
         )
 
     @app.get("/metrics")
