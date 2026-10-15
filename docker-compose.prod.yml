@@ -163,6 +163,12 @@ services:
       - FERRITE_API_KEY=${FERRITE_API_KEY}
       - FERRITE_KEYS_DB=/app/data/keys.db
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     volumes:
       - ferrite_api_data:/app/data
     extra_hosts:

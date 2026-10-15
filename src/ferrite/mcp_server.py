@@ -999,6 +999,9 @@ def main_http(host: str = "0.0.0.0", port: int = 8002):
     # session_id -> {"transport":..., "task":...}; stateful per client session.
     _sessions: dict = {}
 
+    async def handle_health(request):
+        return _JSONResponse({"ok": True, "service": "ferrite-mcp"})
+
     async def _handle_stateless(request):
         """Stateful per MCP session: initialize creates a session; subsequent
         requests with the Mcp-Session-Id header reuse its transport."""
@@ -1077,6 +1080,8 @@ def main_http(host: str = "0.0.0.0", port: int = 8002):
 
     class McpAuthMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
+            if request.url.path == "/health":
+                return await call_next(request)  # unauthenticated liveness probe
             key_info = _ks_validate(_mcp_key_from_request(request))
             if key_info is None:
                 env_key = os.environ.get("FERRITE_API_KEY", "")
@@ -1095,7 +1100,10 @@ def main_http(host: str = "0.0.0.0", port: int = 8002):
             return await call_next(request)
 
     app = Starlette(
-        routes=[Route("/mcp/", handle_mcp, methods=["GET", "POST", "DELETE"])],
+        routes=[
+            Route("/mcp/", handle_mcp, methods=["GET", "POST", "DELETE"]),
+            Route("/health", handle_health, methods=["GET"]),
+        ],
     )
     app.add_middleware(McpAuthMiddleware)
 
